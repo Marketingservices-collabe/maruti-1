@@ -233,11 +233,23 @@
   .repeat-row input[type="number"]{width:64px; flex:none;}
   .repeat-preview{font-size:12px; color:var(--slate-light); margin-top:6px;}
 
+  /* ============================= Nav grouping ============================= */
+  .tabs-divider{width:1px; align-self:stretch; background:var(--line-strong); margin:10px 4px; opacity:.5; flex-shrink:0;}
+
+  /* ============================= Dashboard ============================= */
+  .dash-stats{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:4px;}
+  .dash-stat{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:16px 12px; text-align:center;
+    box-shadow:0 1px 2px rgba(18,33,58,.05), 0 6px 18px rgba(18,33,58,.05);}
+  .dash-stat-value{font-size:26px; font-weight:700; color:var(--ink); font-family:var(--mono); line-height:1.1;}
+  .dash-stat-label{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--slate); margin-top:6px;}
+  .dash-stat-alert .dash-stat-value{color:var(--red);}
+
   /* ============================= RESPONSIVE: iPad / tablet ============================= */
   @media (max-width: 1024px){
     main{padding:20px 18px 70px;}
     .grid.c4{grid-template-columns:1fr 1fr;}
     .crm-list-pane{width:250px;}
+    .dash-stats{grid-template-columns:repeat(3,1fr);}
   }
 
   /* ============================= RESPONSIVE: phones (iOS + Android) ============================= */
@@ -290,6 +302,16 @@
 
     /* Modal: full-width sheet on small screens */
     .modal-box{width:94vw; padding:18px;}
+
+    /* Dashboard: stat tiles stack on narrow screens (the Overdue/Next-7-days columns
+       already collapse via the .grid.c2 rule above) */
+    .dash-stats{grid-template-columns:repeat(2,1fr);}
+
+    /* Toasts: full-width instead of a fixed max-width box that can overflow a narrow phone */
+    .toast-stack{left:12px; right:12px; top:12px; max-width:none;}
+
+    /* Nav grouping divider reads oddly in the horizontally-scrolling phone tab strip */
+    .tabs-divider{display:none;}
 
     /* Data-entry grids (Devices / Discrepancies) stay dense for horizontal scroll — just make sure the container scrolls smoothly and header stays legible */
     table.data thead th{font-size:10px;}
@@ -345,26 +367,34 @@
     <span class="current-user" id="currentUserLabel"></span>
     <button id="btnAdminUsers" hidden>Admin</button>
     <button id="btnLogout">Log out</button>
-    <button id="btnSample">Load sample data</button>
-    <button id="btnReset">Clear all</button>
-    <button id="btnPrint">Print</button>
-    <button id="btnExportPdf">Export PDF</button>
-    <button id="btnSaveReport">Save to Customer</button>
+    <button id="btnSample" hidden>Load sample data</button>
+    <button id="btnReset" hidden>Clear all</button>
+    <button id="btnPrint" hidden>Print</button>
+    <button id="btnExportPdf" hidden>Export PDF</button>
+    <button id="btnSaveReport" hidden>Save to Customer</button>
   </div>
 </header>
 
 <nav class="tabs no-print">
+  <button data-tab="dashboard" class="active">Dashboard</button>
   <button data-tab="tickets">Tickets</button>
   <button data-tab="scheduler">Scheduler</button>
-  <button data-tab="setup" class="active">Building, Panel &amp; Certs</button>
+  <button data-tab="customers">Customers</button>
+  <span class="tabs-divider" aria-hidden="true"></span>
+  <button data-tab="setup">Building, Panel &amp; Certs</button>
   <button data-tab="devices">Devices <span class="count" id="cntDevices">0</span></button>
   <button data-tab="discrepancies">Discrepancies <span class="count" id="cntDiscrepancies">0</span></button>
   <button data-tab="preview">Report Preview</button>
-  <button data-tab="customers">Customers</button>
   <button data-tab="reporttypes">Report Types</button>
 </nav>
 
 <main>
+
+  <!-- ================= DASHBOARD TAB ================= -->
+  <section class="tab active" id="tab-dashboard">
+    <h2 class="section-title">Dashboard <span class="sub">— what needs attention today</span></h2>
+    <div id="dashboardRoot"></div>
+  </section>
 
   <!-- ================= TICKETS TAB ================= -->
   <section class="tab" id="tab-tickets">
@@ -379,7 +409,7 @@
   </section>
 
   <!-- ================= SETUP TAB ================= -->
-  <section class="tab active" id="tab-setup">
+  <section class="tab" id="tab-setup">
     <h2 class="section-title">Customer &amp; service location <span class="sub">— pick the site you're inspecting and its details fill in below automatically</span></h2>
     <div class="card grid c3" id="setupLinkerCard">
       <div class="field"><label>Customer (Billing Location)</label><select id="linkBillingSelect"><option value="">— select —</option></select></div>
@@ -693,7 +723,7 @@ function showApp(){
   document.getElementById('appShell').style.display = 'block';
   document.getElementById('currentUserLabel').textContent = currentUser ? currentUser.email : '';
   document.getElementById('btnAdminUsers').hidden = !(currentUser && currentUser.role === 'admin');
-  renderSetupLinker();
+  renderDashboard(); // Dashboard is the landing tab now
 }
 
 document.getElementById('loginSubmit').addEventListener('click', doLogin);
@@ -799,12 +829,20 @@ function newDevice(){
 }
 
 /* ============================= TABS ============================= */
+// The "Load sample data / Clear all / Print / Export PDF / Save to Customer" actions
+// only mean anything while working on the in-progress Fire Alarm report, so they're
+// hidden everywhere else instead of cluttering every tab's topbar.
+const BUILDER_TABS = ['setup','devices','discrepancies','preview'];
+const BUILDER_ACTION_IDS = ['btnSample','btnReset','btnPrint','btnExportPdf','btnSaveReport'];
 document.querySelectorAll('nav.tabs button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    const showBuilderActions = BUILDER_TABS.includes(btn.dataset.tab);
+    BUILDER_ACTION_IDS.forEach(id=>{ document.getElementById(id).hidden = !showBuilderActions; });
+    if(btn.dataset.tab==='dashboard') renderDashboard();
     if(btn.dataset.tab==='preview') refreshCurrentPreview();
     if(btn.dataset.tab==='customers') renderCustomers();
     if(btn.dataset.tab==='reporttypes') renderReportTypes();
@@ -2975,6 +3013,75 @@ async function renderNewTicketBody(){
     const first = res.rows[0], last = res.rows[res.rows.length-1];
     showToast(`Created ${res.rows.length} tickets (${first.ticketNo} – ${last.ticketNo}).`, 'success');
     openTicketDetailById(first.id);
+  });
+}
+
+/* ============================= DASHBOARD ============================= */
+async function renderDashboard(){
+  const root = document.getElementById('dashboardRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [tickets, services, billings] = await Promise.all([
+    apiList('JobTickets'), apiList('ServiceLocations'), apiList('BillingLocations')
+  ]);
+  const svcById = {}; services.forEach(s=>svcById[s.id]=s);
+  const billById = {}; billings.forEach(b=>billById[b.id]=b);
+  const enriched = tickets.map(t=>{
+    const svc = svcById[t.serviceId];
+    const bill = svc ? billById[svc.billingId] : null;
+    return Object.assign({}, t, {_customer: bill ? bill.name : 'Unknown customer', _site: svc ? svc.name : 'Unknown site'});
+  });
+
+  const openStatuses = ['Scheduled','In Progress'];
+  const isOpen = t => openStatuses.includes(t.status || 'Scheduled');
+  const todayStr = new Date().toISOString().slice(0,10);
+  const weekAhead = new Date(); weekAhead.setDate(weekAhead.getDate()+7);
+  const weekAheadStr = weekAhead.toISOString().slice(0,10);
+
+  const overdue = enriched
+    .filter(t => isOpen(t) && t.jobDate && t.jobDate < todayStr)
+    .sort((a,b)=> new Date(a.jobDate) - new Date(b.jobDate));
+  const upcoming = enriched
+    .filter(t => isOpen(t) && t.jobDate && t.jobDate >= todayStr && t.jobDate <= weekAheadStr)
+    .sort((a,b)=> new Date(a.jobDate) - new Date(b.jobDate));
+  const openCount = enriched.filter(isOpen).length;
+  const thisMonthCount = enriched.filter(t => t.jobDate && t.jobDate.slice(0,7) === todayStr.slice(0,7)).length;
+
+  const ticketRow = t => `
+    <div class="report-row">
+      <div>
+        <span class="ticket-no">${t.ticketNo||''}</span>
+        <strong>${t._customer}</strong> <span class="hint" style="display:inline;">— ${t._site}</span>
+        <span class="badge-total" style="border-color:${jobStatusColor(t.status)}; color:${jobStatusColor(t.status)};">${t.status||'Scheduled'}</span>
+        <div class="meta">${t.jobDate?fmtDate(t.jobDate):'No date set'}${t.jobType?' · '+t.jobType:''}${t.assignedTo?' · '+t.assignedTo:''}</div>
+      </div>
+      <div class="btns"><button class="btn ghost sm" data-open-ticket="${t.id}">Open</button></div>
+    </div>`;
+
+  root.innerHTML = `
+    <div class="dash-stats">
+      <div class="dash-stat"><div class="dash-stat-value">${billings.length}</div><div class="dash-stat-label">Customers</div></div>
+      <div class="dash-stat"><div class="dash-stat-value">${services.length}</div><div class="dash-stat-label">Service locations</div></div>
+      <div class="dash-stat"><div class="dash-stat-value">${openCount}</div><div class="dash-stat-label">Open tickets</div></div>
+      <div class="dash-stat${overdue.length ? ' dash-stat-alert' : ''}"><div class="dash-stat-value">${overdue.length}</div><div class="dash-stat-label">Overdue</div></div>
+      <div class="dash-stat"><div class="dash-stat-value">${thisMonthCount}</div><div class="dash-stat-label">Due this month</div></div>
+    </div>
+    <div class="row-actions" style="margin:16px 0 24px;">
+      <button class="btn" id="dashNewTicket">+ New ticket</button>
+    </div>
+    <div class="grid c2" style="align-items:start;">
+      <div>
+        <h2 class="section-title" style="margin-top:0;">Overdue <span class="sub">${overdue.length} ticket${overdue.length===1?'':'s'}</span></h2>
+        ${overdue.length ? overdue.map(ticketRow).join('') : '<div class="crm-empty">Nothing overdue — you\'re all caught up.</div>'}
+      </div>
+      <div>
+        <h2 class="section-title" style="margin-top:0;">Next 7 days <span class="sub">${upcoming.length} ticket${upcoming.length===1?'':'s'}</span></h2>
+        ${upcoming.length ? upcoming.map(ticketRow).join('') : '<div class="crm-empty">Nothing scheduled in the next week.</div>'}
+      </div>
+    </div>`;
+
+  document.getElementById('dashNewTicket').addEventListener('click', ()=> openNewTicketModal());
+  root.querySelectorAll('[data-open-ticket]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openTicketDetailById(btn.dataset.openTicket));
   });
 }
 
