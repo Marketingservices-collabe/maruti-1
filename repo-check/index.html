@@ -15,7 +15,7 @@
   }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--paper); color:var(--ink-2); font-family:var(--sans); font-size:14px; line-height:1.5;}
-  header.topbar{background:var(--ink); color:#EDEFF3; padding:18px 28px; display:flex; align-items:baseline; justify-content:space-between; border-bottom:3px solid var(--red);}
+  header.topbar{background:linear-gradient(180deg,#16294A 0%,var(--ink) 100%); color:#EDEFF3; padding:18px 28px; display:flex; align-items:baseline; justify-content:space-between; border-bottom:3px solid var(--red);}
   header.topbar .brand{display:flex; align-items:center; gap:12px;}
   header.topbar .brand img.logo{height:34px; width:auto; display:block; background:#fff; padding:3px 6px;}
   .doc .cover-logo{display:block; height:64px; width:auto; margin-bottom:14px;}
@@ -30,7 +30,8 @@
   main{max-width:1400px; margin:0 auto; padding:24px 28px 80px;}
   section.tab{display:none;}
   section.tab.active{display:block;}
-  h2.section-title{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--slate); margin:28px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line-strong);}
+  h2.section-title{position:relative; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--slate); margin:28px 0 10px 12px; padding-bottom:6px; border-bottom:1px solid var(--line-strong);}
+  h2.section-title::before{content:''; position:absolute; left:-12px; top:1px; bottom:7px; width:3px; background:var(--red);}
   h2.section-title:first-child{margin-top:0;}
   h2.section-title .sub{text-transform:none; letter-spacing:0; color:var(--slate-light); font-weight:400;}
   .card{background:var(--panel); border:1px solid var(--line); padding:18px 20px; margin-bottom:16px;}
@@ -145,7 +146,7 @@
   .modal-box h3{margin:0 0 14px; font-size:15px; color:var(--ink); text-transform:none; letter-spacing:0; background:none; padding:0;}
 
   /* ============================= Login ============================= */
-  .login-screen{position:fixed; inset:0; background:var(--ink); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
+  .login-screen{position:fixed; inset:0; background:radial-gradient(120% 120% at 15% 10%,#1F3459 0%,var(--ink) 45%,#0B1626 100%); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
   .login-box{background:#fff; width:360px; max-width:100%; padding:34px 30px; border-top:4px solid var(--red); text-align:center;}
   .login-logo{height:44px; width:auto; margin-bottom:16px;}
   .login-box h1{font-size:18px; margin:0 0 4px; color:var(--ink);}
@@ -181,11 +182,75 @@
   .rt-field-row input, .rt-field-row select{font-size:12.5px; padding:6px 7px;}
   .rt-pinned{border-left:3px solid var(--slate-light); opacity:.85;}
 
+  /* ============================= Polish: motion, depth, feedback ============================= */
+  /* Scoped to app chrome/CRM UI only — the .doc report used for PDF export/print is left
+     exactly as-is so exported reports don't change. */
+  .btn, header.topbar .actions button, input, select, textarea, .crm-item, .cal-cell,
+  nav.tabs button, .crm-subtabs button, .row-expand-btn, .del-btn{
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease, transform .08s ease;
+  }
+  .btn, header.topbar .actions button, input, select, textarea{border-radius:5px;}
+  .btn:active{transform:translateY(1px);}
+  .btn:disabled, button:disabled{opacity:.55; cursor:not-allowed; transform:none;}
+  .del-btn:hover{color:#8F2E1A;}
+  nav.tabs button:hover{color:#fff;}
+  .crm-subtabs button:hover{color:var(--ink);}
+  .card, .modal-box, .row-editor-sheet, .login-box, .rt-card, .attachment-row, .report-row, .crm-note{
+    border-radius:6px; box-shadow:0 1px 2px rgba(18,33,58,.05), 0 6px 18px rgba(18,33,58,.06);
+  }
+  .ticket-no{border-radius:4px;}
+  .modal-box, .row-editor-sheet{animation: modalIn .16s ease;}
+  @keyframes modalIn{ from{opacity:0; transform:translateY(6px) scale(.99);} to{opacity:1; transform:none;} }
+
+  /* Spinner used in place of plain "Loading…" text */
+  .spinner{display:inline-block; width:14px; height:14px; border:2px solid var(--line-strong); border-top-color:var(--ink);
+    border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; margin-right:8px;}
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  /* Inside a solid dark button (default/danger) a navy-on-navy spinner is invisible — go light there. */
+  .btn:not(.ghost) .spinner{border-color:rgba(255,255,255,.4); border-top-color:#fff;}
+
+  /* Toasts — replace jarring native alert() popups */
+  .toast-stack{position:fixed; top:18px; right:18px; z-index:1300; display:flex; flex-direction:column; gap:8px; max-width:360px; pointer-events:none;}
+  .toast{pointer-events:auto; background:#fff; border-left:4px solid var(--ink); border-radius:6px; padding:12px 34px 12px 14px;
+    font-size:13px; line-height:1.45; box-shadow:0 4px 16px rgba(18,33,58,.18); position:relative; animation:toastIn .18s ease;}
+  .toast.success{border-left-color:var(--green);}
+  .toast.error{border-left-color:var(--red);}
+  .toast .toast-close{position:absolute; top:7px; right:7px; background:none; border:none; color:var(--slate-light); font-size:14px; cursor:pointer; line-height:1; padding:4px;}
+  .toast.leaving{animation:toastOut .15s ease forwards;}
+  @keyframes toastIn{ from{opacity:0; transform:translateX(16px);} to{opacity:1; transform:none;} }
+  @keyframes toastOut{ from{opacity:1; transform:none;} to{opacity:0; transform:translateX(16px);} }
+
+  /* Confirm dialog — replaces native confirm() */
+  .confirm-box{width:400px;}
+  .confirm-box p{margin:0 0 18px; font-size:13.5px; color:var(--ink-2); line-height:1.5;}
+  .confirm-box .row-actions{justify-content:flex-end;}
+  .btn.danger{background:var(--red); border-color:var(--red);}
+  .btn.danger:hover{background:#8F2E1A; border-color:#8F2E1A;}
+
+  /* Recurring ticket options */
+  .checkbox-label{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-2); text-transform:none; letter-spacing:0; cursor:pointer; margin-bottom:0;}
+  .checkbox-label input[type="checkbox"]{width:auto; margin:0;}
+  .repeat-row{display:flex; align-items:center; gap:8px;}
+  .repeat-row input[type="number"]{width:64px; flex:none;}
+  .repeat-preview{font-size:12px; color:var(--slate-light); margin-top:6px;}
+
+  /* ============================= Nav grouping ============================= */
+  .tabs-divider{width:1px; align-self:stretch; background:var(--line-strong); margin:10px 4px; opacity:.5; flex-shrink:0;}
+
+  /* ============================= Dashboard ============================= */
+  .dash-stats{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:4px;}
+  .dash-stat{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:16px 12px; text-align:center;
+    box-shadow:0 1px 2px rgba(18,33,58,.05), 0 6px 18px rgba(18,33,58,.05);}
+  .dash-stat-value{font-size:26px; font-weight:700; color:var(--ink); font-family:var(--mono); line-height:1.1;}
+  .dash-stat-label{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--slate); margin-top:6px;}
+  .dash-stat-alert .dash-stat-value{color:var(--red);}
+
   /* ============================= RESPONSIVE: iPad / tablet ============================= */
   @media (max-width: 1024px){
     main{padding:20px 18px 70px;}
     .grid.c4{grid-template-columns:1fr 1fr;}
     .crm-list-pane{width:250px;}
+    .dash-stats{grid-template-columns:repeat(3,1fr);}
   }
 
   /* ============================= RESPONSIVE: phones (iOS + Android) ============================= */
@@ -201,7 +266,7 @@
     nav.tabs button{padding:12px 12px; font-size:12.5px;}
 
     main{padding:16px 14px 70px;}
-    h2.section-title{font-size:12px; margin:22px 0 10px;}
+    h2.section-title{font-size:12px; margin:22px 0 10px 12px;}
 
     .card{padding:14px 16px;}
     .grid.c2, .grid.c3, .grid.c4{grid-template-columns:1fr; gap:10px;}
@@ -239,6 +304,16 @@
     /* Modal: full-width sheet on small screens */
     .modal-box{width:94vw; padding:18px;}
 
+    /* Dashboard: stat tiles stack on narrow screens (the Overdue/Next-7-days columns
+       already collapse via the .grid.c2 rule above) */
+    .dash-stats{grid-template-columns:repeat(2,1fr);}
+
+    /* Toasts: full-width instead of a fixed max-width box that can overflow a narrow phone */
+    .toast-stack{left:12px; right:12px; top:12px; max-width:none;}
+
+    /* Nav grouping divider reads oddly in the horizontally-scrolling phone tab strip */
+    .tabs-divider{display:none;}
+
     /* Data-entry grids (Devices / Discrepancies) stay dense for horizontal scroll — just make sure the container scrolls smoothly and header stays legible */
     table.data thead th{font-size:10px;}
   }
@@ -255,6 +330,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 </head>
 <body>
+
+<div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box confirm-box">
+    <h3 id="confirmTitle">Please confirm</h3>
+    <p id="confirmMessage"></p>
+    <div class="row-actions">
+      <button class="btn ghost" id="confirmCancel">Cancel</button>
+      <button class="btn danger" id="confirmOk">Delete</button>
+    </div>
+  </div>
+</div>
 
 <div id="loginScreen" class="login-screen">
   <div class="login-box">
@@ -280,26 +368,34 @@
     <span class="current-user" id="currentUserLabel"></span>
     <button id="btnAdminUsers" hidden>Admin</button>
     <button id="btnLogout">Log out</button>
-    <button id="btnSample">Load sample data</button>
-    <button id="btnReset">Clear all</button>
-    <button id="btnPrint">Print</button>
-    <button id="btnExportPdf">Export PDF</button>
-    <button id="btnSaveReport">Save to Customer</button>
+    <button id="btnSample" hidden>Load sample data</button>
+    <button id="btnReset" hidden>Clear all</button>
+    <button id="btnPrint" hidden>Print</button>
+    <button id="btnExportPdf" hidden>Export PDF</button>
+    <button id="btnSaveReport" hidden>Save to Customer</button>
   </div>
 </header>
 
 <nav class="tabs no-print">
+  <button data-tab="dashboard" class="active">Dashboard</button>
   <button data-tab="tickets">Tickets</button>
   <button data-tab="scheduler">Scheduler</button>
-  <button data-tab="setup" class="active">Building, Panel &amp; Certs</button>
+  <button data-tab="customers">Customers</button>
+  <span class="tabs-divider" aria-hidden="true"></span>
+  <button data-tab="setup">Building, Panel &amp; Certs</button>
   <button data-tab="devices">Devices <span class="count" id="cntDevices">0</span></button>
   <button data-tab="discrepancies">Discrepancies <span class="count" id="cntDiscrepancies">0</span></button>
   <button data-tab="preview">Report Preview</button>
-  <button data-tab="customers">Customers</button>
   <button data-tab="reporttypes">Report Types</button>
 </nav>
 
 <main>
+
+  <!-- ================= DASHBOARD TAB ================= -->
+  <section class="tab active" id="tab-dashboard">
+    <h2 class="section-title">Dashboard <span class="sub">— what needs attention today</span></h2>
+    <div id="dashboardRoot"></div>
+  </section>
 
   <!-- ================= TICKETS TAB ================= -->
   <section class="tab" id="tab-tickets">
@@ -314,7 +410,7 @@
   </section>
 
   <!-- ================= SETUP TAB ================= -->
-  <section class="tab active" id="tab-setup">
+  <section class="tab" id="tab-setup">
     <h2 class="section-title">Customer &amp; service location <span class="sub">— pick the site you're inspecting and its details fill in below automatically</span></h2>
     <div class="card grid c3" id="setupLinkerCard">
       <div class="field"><label>Customer (Billing Location)</label><select id="linkBillingSelect"><option value="">— select —</option></select></div>
@@ -553,6 +649,49 @@ const LOGO_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0QAAAHXCAY
 // Small expand-row icon (row -> vertical form editor), works identically across Chrome/Safari/Firefox
 const EXPAND_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>';
 
+/* ============================= TOASTS & CONFIRM DIALOG ============================= */
+// Replaces jarring native alert()/confirm() popups with something that matches the app
+// and doesn't block the whole tab. showToast() is fire-and-forget; confirmDialog()
+// returns a Promise<boolean> so call sites just `if(!(await confirmDialog('...'))) return;`
+function showToast(message, type='info', duration=4200){
+  const stack = document.getElementById('toastStack');
+  if(!stack) return; // never let a notification failure take down the caller
+  const el = document.createElement('div');
+  el.className = 'toast' + (type && type !== 'info' ? ' ' + type : '');
+  el.innerHTML = `<span></span><button class="toast-close" aria-label="Dismiss" type="button">✕</button>`;
+  el.querySelector('span').textContent = message; // textContent, not innerHTML — message may echo user/server text
+  const remove = ()=>{ el.classList.add('leaving'); setTimeout(()=> el.remove(), 160); };
+  el.querySelector('.toast-close').addEventListener('click', remove);
+  stack.appendChild(el);
+  if(duration) setTimeout(remove, duration);
+}
+
+let confirmResolver_ = null;
+function confirmDialog(message, opts={}){
+  return new Promise(resolve=>{
+    confirmResolver_ = resolve;
+    document.getElementById('confirmMessage').textContent = message;
+    const okBtn = document.getElementById('confirmOk');
+    okBtn.textContent = opts.confirmLabel || 'Delete';
+    okBtn.className = 'btn' + (opts.danger === false ? '' : ' danger');
+    document.getElementById('confirmModal').style.display = 'flex';
+  });
+}
+function resolveConfirm_(value){
+  document.getElementById('confirmModal').style.display = 'none';
+  if(confirmResolver_) confirmResolver_(value);
+  confirmResolver_ = null;
+}
+document.getElementById('confirmCancel').addEventListener('click', ()=> resolveConfirm_(false));
+document.getElementById('confirmOk').addEventListener('click', ()=> resolveConfirm_(true));
+
+// Puts a spinner in front of a button's label and disables it — the one place every
+// "Saving…" / "Creating…" / "Signing in…" busy-state goes through.
+function setBusy(btn, label){
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>' + label;
+}
+
 /* ============================= AUTH ============================= */
 let authToken = null;
 let currentUser = null; // {id, email, role}
@@ -585,7 +724,7 @@ function showApp(){
   document.getElementById('appShell').style.display = 'block';
   document.getElementById('currentUserLabel').textContent = currentUser ? currentUser.email : '';
   document.getElementById('btnAdminUsers').hidden = !(currentUser && currentUser.role === 'admin');
-  renderSetupLinker();
+  renderDashboard(); // Dashboard is the landing tab now
 }
 
 document.getElementById('loginSubmit').addEventListener('click', doLogin);
@@ -597,7 +736,7 @@ async function doLogin(){
   const password = document.getElementById('loginPassword').value;
   if(!email || !password){ showLoginScreen('Enter both email and password.'); return; }
   const btn = document.getElementById('loginSubmit');
-  btn.disabled = true; btn.textContent = 'Signing in…';
+  setBusy(btn, 'Signing in…');
   try{
     const res = await backendFetchPost({action:'login', email, password});
     const result = await parseApiResponse(res);
@@ -658,6 +797,28 @@ function daysBetween(a,b){
   if(isNaN(da)||isNaN(db)) return null;
   return Math.round((db-da)/86400000);
 }
+// Adds `n` weeks/months/years to a YYYY-MM-DD date, clamping to the last valid day of
+// the target month instead of letting JS's Date roll over (e.g. Jan 31 + 1 month should
+// land on Feb 28/29, not Mar 3) — used for multi-month/multi-year recurring tickets.
+function addInterval(dateStr, unit, n){
+  const d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d)) return dateStr;
+  if(unit === 'weekly'){
+    d.setDate(d.getDate() + 7*n);
+    return d.toISOString().slice(0,10);
+  }
+  const day = d.getDate();
+  if(unit === 'monthly'){
+    d.setDate(1);
+    d.setMonth(d.getMonth() + n);
+  } else if(unit === 'yearly'){
+    d.setDate(1);
+    d.setFullYear(d.getFullYear() + n);
+  }
+  const lastDay = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return d.toISOString().slice(0,10);
+}
 function newDevice(){
   return {
     id: uid(), scanId:'', type:'Smoke Detector', category:'Initiating', description:'', location:'',
@@ -669,12 +830,20 @@ function newDevice(){
 }
 
 /* ============================= TABS ============================= */
+// The "Load sample data / Clear all / Print / Export PDF / Save to Customer" actions
+// only mean anything while working on the in-progress Fire Alarm report, so they're
+// hidden everywhere else instead of cluttering every tab's topbar.
+const BUILDER_TABS = ['setup','devices','discrepancies','preview'];
+const BUILDER_ACTION_IDS = ['btnSample','btnReset','btnPrint','btnExportPdf','btnSaveReport'];
 document.querySelectorAll('nav.tabs button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    const showBuilderActions = BUILDER_TABS.includes(btn.dataset.tab);
+    BUILDER_ACTION_IDS.forEach(id=>{ document.getElementById(id).hidden = !showBuilderActions; });
+    if(btn.dataset.tab==='dashboard') renderDashboard();
     if(btn.dataset.tab==='preview') refreshCurrentPreview();
     if(btn.dataset.tab==='customers') renderCustomers();
     if(btn.dataset.tab==='reporttypes') renderReportTypes();
@@ -1368,8 +1537,8 @@ function loadSample(){
 }
 
 document.getElementById('btnSample').addEventListener('click', loadSample);
-document.getElementById('btnReset').addEventListener('click', ()=>{
-  if(!confirm('Clear all building info and devices?')) return;
+document.getElementById('btnReset').addEventListener('click', async ()=>{
+  if(!(await confirmDialog('Clear all building info and devices?', {confirmLabel:'Clear'}))) return;
   devices = []; setup = {}; certifications = []; codeLib = [];
   setupFields.forEach(f=>{ const el=document.getElementById('s_'+f); if(el) el.value=''; });
   renderCerts(); renderCodeLib(); renderDevices(); renderDiscrepancies(); renderSetupLinker();
@@ -1403,12 +1572,12 @@ document.getElementById('btnExportPdf').addEventListener('click', ()=>{
     try{
       if(typeof html2pdf === 'undefined') throw new Error('html2pdf did not load');
       html2pdf().set(opt).from(el).save().then(()=>{ busy.style.display='none'; })
-        .catch(()=>{ busy.style.display='none'; alert('PDF export failed — try Print instead and choose "Save as PDF".'); });
+        .catch(()=>{ busy.style.display='none'; showToast('PDF export failed — try Print instead and choose "Save as PDF".', 'error'); });
     }catch(err){
       // html2pdf failing to load (CDN blocked, offline, ad-blocker) used to leave this
       // overlay stuck forever with no way to dismiss it — always clear it on any failure.
       busy.style.display = 'none';
-      alert('PDF export failed to start — try Print instead and choose "Save as PDF".');
+      showToast('PDF export failed to start — try Print instead and choose "Save as PDF".', 'error');
     }
   }, 150);
 });
@@ -1514,6 +1683,17 @@ async function apiWrite(action, sheet, id, data){
     return result;
   }catch(e){ console.error(e); return {ok:false, error:String(e)}; }
 }
+// Creates several rows in one request — used for recurring tickets (multi-month /
+// multi-year schedules) instead of one create call per occurrence.
+async function apiWriteMany(sheet, dataList){
+  try{
+    const res = await backendFetchPost({action:'createMany', sheet, dataList, token: authToken || ''});
+    const result = await parseApiResponse(res);
+    if(checkAuthFailure_(result)) return result;
+    if(result && result.ok) apiCacheInvalidateSheet(sheet);
+    return result;
+  }catch(e){ console.error(e); return {ok:false, error:String(e)}; }
+}
 async function apiUploadAttachment(serviceId, file){
   return new Promise((resolve)=>{
     const reader = new FileReader();
@@ -1541,7 +1721,7 @@ let saveModalState = {billingId:null, serviceId:null, jobTicketId:null};
 /* ============================= CRM: MAIN RENDER ROUTER ============================= */
 async function renderCustomers(){
   const root = document.getElementById('crmRoot');
-  root.innerHTML = '<div class="crm-empty">Loading…</div>';
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
   if(crm.view === 'billing-list') await renderBillingList(root);
   else if(crm.view === 'billing-detail') await renderBillingDetail(root);
   else if(crm.view === 'service-detail') await renderServiceDetail(root);
@@ -1587,8 +1767,8 @@ async function renderBillingList(root){
   });
   document.getElementById('btnCreateBilling').addEventListener('click', async ()=>{
     const name = document.getElementById('newBillingName').value.trim();
-    if(!name){ alert('Customer name is required.'); return; }
-    const btn = document.getElementById('btnCreateBilling'); btn.textContent = 'Saving…'; btn.disabled = true;
+    if(!name){ showToast('Customer name is required.', 'error'); return; }
+    const btn = document.getElementById('btnCreateBilling'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'BillingLocations', null, {
       name, phone: document.getElementById('newBillingPhone').value,
       address: document.getElementById('newBillingAddress').value,
@@ -1596,7 +1776,7 @@ async function renderBillingList(root){
       email: document.getElementById('newBillingEmail').value, notes: ''
     });
     if(res.ok){ crm.billingId = res.id; crm.view = 'billing-detail'; renderCustomers(); }
-    else{ alert('Save failed: ' + (res.error || 'unknown error')); btn.textContent = '+ Add customer'; btn.disabled = false; }
+    else{ showToast('Save failed: ' + (res.error || 'unknown error'), 'error'); btn.textContent = '+ Add customer'; btn.disabled = false; }
   });
 }
 
@@ -1650,18 +1830,18 @@ async function renderBillingDetail(root){
     el.addEventListener('click', ()=>{ crm.serviceId = el.dataset.id; crm.serviceTab = 'details'; crm.view = 'service-detail'; renderCustomers(); });
   });
   document.getElementById('btnSaveBilling').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnSaveBilling'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnSaveBilling'); setBusy(btn, 'Saving…');
     const res = await apiWrite('update', 'BillingLocations', crm.billingId, {
       name: document.getElementById('bName').value, phone: document.getElementById('bPhone').value,
       email: document.getElementById('bEmail').value, address: document.getElementById('bAddress').value,
       cityState: document.getElementById('bCityState').value, notes: document.getElementById('bNotes').value
     });
-    if(res.ok) renderCustomers(); else { alert('Save failed: ' + (res.error || '')); btn.textContent = 'Save changes'; btn.disabled = false; }
+    if(res.ok) renderCustomers(); else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save changes'; btn.disabled = false; }
   });
   document.getElementById('btnCreateSvc').addEventListener('click', async ()=>{
     const name = document.getElementById('newSvcName').value.trim();
-    if(!name){ alert('Site name is required.'); return; }
-    const btn = document.getElementById('btnCreateSvc'); btn.textContent = 'Saving…'; btn.disabled = true;
+    if(!name){ showToast('Site name is required.', 'error'); return; }
+    const btn = document.getElementById('btnCreateSvc'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'ServiceLocations', null, {
       billingId: crm.billingId, name,
       contactName: document.getElementById('newSvcContact').value,
@@ -1670,7 +1850,7 @@ async function renderBillingDetail(root){
       contactPhone: document.getElementById('newSvcPhone').value, notes: ''
     });
     if(res.ok){ crm.serviceId = res.id; crm.serviceTab = 'details'; crm.view = 'service-detail'; renderCustomers(); }
-    else{ alert('Save failed: ' + (res.error || '')); btn.textContent = '+ Add service location'; btn.disabled = false; }
+    else{ showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = '+ Add service location'; btn.disabled = false; }
   });
 }
 
@@ -1716,13 +1896,13 @@ async function renderSvcDetailsTab(sub, svc){
     </div>
     <button class="btn sm" id="btnSaveSvc">Save changes</button>`;
   document.getElementById('btnSaveSvc').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnSaveSvc'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnSaveSvc'); setBusy(btn, 'Saving…');
     const res = await apiWrite('update', 'ServiceLocations', svc.id, {
       name: document.getElementById('svcName').value, contactName: document.getElementById('svcContact').value,
       address: document.getElementById('svcAddress').value, cityState: document.getElementById('svcCityState').value,
       contactPhone: document.getElementById('svcPhone').value
     });
-    if(res.ok) renderCustomers(); else { alert('Save failed: ' + (res.error || '')); btn.textContent = 'Save changes'; btn.disabled = false; }
+    if(res.ok) renderCustomers(); else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save changes'; btn.disabled = false; }
   });
 }
 
@@ -1738,9 +1918,9 @@ async function renderSvcNotesTab(sub, svc){
   document.getElementById('btnAddNote').addEventListener('click', async ()=>{
     const text = document.getElementById('newNoteText').value.trim();
     if(!text) return;
-    const btn = document.getElementById('btnAddNote'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnAddNote'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'Notes', null, {serviceId: svc.id, text});
-    if(res.ok) renderCustomers(); else { alert('Save failed: ' + (res.error || '')); btn.textContent = 'Add note'; btn.disabled = false; }
+    if(res.ok) renderCustomers(); else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Add note'; btn.disabled = false; }
   });
 }
 
@@ -1760,14 +1940,14 @@ async function renderSvcAttachmentsTab(sub, svc){
   document.getElementById('attFileInput').addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
-    if(file.size > 10*1024*1024){ alert('Keep attachments under 10MB.'); return; }
-    document.getElementById('attUploadStatus').innerHTML = '<p class="hint">Uploading…</p>';
+    if(file.size > 10*1024*1024){ showToast('Keep attachments under 10MB.', 'error'); return; }
+    document.getElementById('attUploadStatus').innerHTML = '<p class="hint"><span class="spinner"></span>Uploading…</p>';
     const res = await apiUploadAttachment(svc.id, file);
     if(res.ok) renderCustomers(); else { document.getElementById('attUploadStatus').innerHTML = `<p class="hint">Upload failed: ${res.error||''}</p>`; }
   });
   sub.querySelectorAll('.del-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if(!confirm('Remove this attachment record? (the file itself stays in Drive)')) return;
+      if(!(await confirmDialog('Remove this attachment record? (the file itself stays in Storage)', {confirmLabel:'Remove'}))) return;
       await apiWrite('delete', 'Attachments', btn.dataset.id, {});
       renderCustomers();
     });
@@ -1814,7 +1994,7 @@ async function renderSvcJobTicketsTab(sub, svc){
         </div>`).join('') : '<div class="crm-empty">No job tickets for this location yet.</div>'}
     </div>`;
   document.getElementById('btnAddJobTicket').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnAddJobTicket'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnAddJobTicket'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'JobTickets', null, {
       serviceId: svc.id,
       jobDate: document.getElementById('jtDate').value,
@@ -1823,7 +2003,7 @@ async function renderSvcJobTicketsTab(sub, svc){
       assignedTo: document.getElementById('jtAssigned').value,
       description: document.getElementById('jtDescription').value
     });
-    if(res.ok) renderCustomers(); else { alert('Save failed: ' + (res.error || '')); btn.textContent = '+ Add job ticket'; btn.disabled = false; }
+    if(res.ok) renderCustomers(); else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = '+ Add job ticket'; btn.disabled = false; }
   });
   sub.querySelectorAll('[data-act="open"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{ crm.jobTicketId = btn.dataset.id; crm.view = 'jobticket-detail'; renderCustomers(); });
@@ -1833,7 +2013,7 @@ async function renderSvcJobTicketsTab(sub, svc){
   });
   sub.querySelectorAll('[data-act="del"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if(!confirm('Delete this job ticket?')) return;
+      if(!(await confirmDialog('Delete this job ticket?'))) return;
       await apiWrite('delete', 'JobTickets', btn.dataset.id, {});
       renderCustomers();
     });
@@ -1856,7 +2036,7 @@ function openJobTicketEditor(svc, ticket){
     </div>`;
   document.getElementById('modalCancel').addEventListener('click', closeSaveModal);
   document.getElementById('jteSave').addEventListener('click', async ()=>{
-    const btn = document.getElementById('jteSave'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('jteSave'); setBusy(btn, 'Saving…');
     const res = await apiWrite('update', 'JobTickets', ticket.id, {
       jobDate: document.getElementById('jteDate').value,
       jobType: document.getElementById('jteType').value,
@@ -1865,7 +2045,7 @@ function openJobTicketEditor(svc, ticket){
       description: document.getElementById('jteDescription').value
     });
     if(res.ok){ closeSaveModal(); renderCustomers(); }
-    else { alert('Save failed: ' + (res.error || '')); btn.textContent = 'Save changes'; btn.disabled = false; }
+    else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save changes'; btn.disabled = false; }
   });
 }
 
@@ -1896,18 +2076,18 @@ async function renderSvcReportsTab(sub, svc){
       </div>`;
     }).join('') : '<div class="crm-empty">No reports saved for this location yet.</div>'}`;
   document.getElementById('btnSaveCurrentReport').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnSaveCurrentReport'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnSaveCurrentReport'); setBusy(btn, 'Saving…');
     const jobTicketId = document.getElementById('reportJobTicketSelect').value || '';
     const res = await saveReportToService(svc.id, jobTicketId);
     if(res.ok){ setup.linkedBillingId = svc.billingId; setup.linkedServiceId = svc.id; renderCustomers(); }
-    else { alert('Save failed: ' + (res.error || '')); btn.textContent = 'Save current report here'; btn.disabled = false; }
+    else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save current report here'; btn.disabled = false; }
   });
   sub.querySelectorAll('[data-act="load"]').forEach(btn=>{
     btn.addEventListener('click', ()=> loadReportSnapshot(btn.dataset.id));
   });
   sub.querySelectorAll('[data-act="del"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if(!confirm('Delete this saved report?')) return;
+      if(!(await confirmDialog('Delete this saved report?'))) return;
       await apiWrite('delete', 'Reports', btn.dataset.id, {});
       renderCustomers();
     });
@@ -1927,7 +2107,7 @@ async function loadReportSnapshot(reportId){
   const row = await apiGet('Reports', reportId);
   if(!row) return;
   let snap;
-  try{ snap = JSON.parse(row.dataJson); } catch(e){ alert('Could not read saved report data.'); return; }
+  try{ snap = JSON.parse(row.dataJson); } catch(e){ showToast('Could not read saved report data.', 'error'); return; }
   setup = snap.setup || {};
   devices = snap.devices || [];
   certifications = snap.certifications || [];
@@ -1995,6 +2175,7 @@ document.getElementById('btnUnlinkService').addEventListener('click', ()=>{
 /* ============================= CRM: SAVE-REPORT MODAL (top bar) ============================= */
 function openSaveModal(){
   document.getElementById('saveReportModal').style.display = 'flex';
+  document.getElementById('saveReportBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   saveModalState = {billingId: setup.linkedBillingId || null, serviceId: setup.linkedServiceId || null, jobTicketId: setup.linkedJobTicketId || null};
   renderSaveModalBody();
 }
@@ -2050,14 +2231,14 @@ async function renderSaveModalBody(){
   }
   document.getElementById('modalSave').addEventListener('click', async ()=>{
     if(!saveModalState.serviceId) return;
-    const btn = document.getElementById('modalSave'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('modalSave'); setBusy(btn, 'Saving…');
     const res = await saveReportToService(saveModalState.serviceId, saveModalState.jobTicketId);
     if(res.ok){
       setup.linkedBillingId = saveModalState.billingId;
       setup.linkedServiceId = saveModalState.serviceId;
-      closeSaveModal(); alert('Report saved.');
+      closeSaveModal(); showToast('Report saved.', 'success');
     }
-    else{ alert('Save failed: ' + (res.error || '')); btn.textContent = 'Save report'; btn.disabled = false; }
+    else{ showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save report'; btn.disabled = false; }
   });
 }
 
@@ -2231,7 +2412,7 @@ let rtEditor = null; // in-progress builder state while creating/editing a repor
 
 async function renderReportTypes(){
   const root = document.getElementById('reportTypesRoot');
-  root.innerHTML = '<div class="crm-empty">Loading…</div>';
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
   const types = await apiList('ReportTypes');
   let html = `
     <div class="rt-card rt-pinned">
@@ -2264,7 +2445,7 @@ async function renderReportTypes(){
     renderRtEditor();
   });
   document.getElementById('btnLoadStarterTypes').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnLoadStarterTypes'); btn.textContent = 'Adding…'; btn.disabled = true;
+    const btn = document.getElementById('btnLoadStarterTypes'); setBusy(btn, 'Adding…');
     const existingSlugs = new Set(types.map(t=>t.slug));
     const errors = [];
     let added = 0;
@@ -2277,10 +2458,11 @@ async function renderReportTypes(){
       if(res.ok) added++; else errors.push(`${st.name}: ${res.error || 'unknown error'}`);
     }
     if(errors.length){
-      alert(`Added ${added} of ${STARTER_REPORT_TYPES.length}. Failed:\n\n${errors.join('\n')}`);
+      showToast(`Added ${added} of ${STARTER_REPORT_TYPES.length}. ${errors.length} failed — check the console for details.`, 'error');
+      console.error('Starter template load failures:', errors);
       btn.textContent = 'Load starter templates'; btn.disabled = false;
     } else if(added === 0){
-      alert('All starter templates are already loaded.');
+      showToast('All starter templates are already loaded.', 'info');
       btn.textContent = 'Load starter templates'; btn.disabled = false;
     } else {
       renderReportTypes();
@@ -2297,7 +2479,7 @@ async function renderReportTypes(){
   });
   root.querySelectorAll('[data-act="del-type"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if(!confirm('Delete this report type? Existing saved reports of this type will remain but can no longer be edited through the builder.')) return;
+      if(!(await confirmDialog('Delete this report type? Existing saved reports of this type will remain but can no longer be edited through the builder.'))) return;
       await apiWrite('delete', 'ReportTypes', btn.dataset.id, {});
       renderReportTypes();
     });
@@ -2421,12 +2603,12 @@ function renderRtEditor(){
   });
   document.getElementById('rtCancel').addEventListener('click', ()=>{ rtEditor = null; renderRtEditor(); });
   document.getElementById('rtSave').addEventListener('click', async ()=>{
-    if(!st.name.trim()){ alert('Give this report type a name.'); return; }
-    const btn = document.getElementById('rtSave'); btn.textContent = 'Saving…'; btn.disabled = true;
+    if(!st.name.trim()){ showToast('Give this report type a name.', 'error'); return; }
+    const btn = document.getElementById('rtSave'); setBusy(btn, 'Saving…');
     const payload = { name: st.name.trim(), slug: slugify(st.name), schemaJson: JSON.stringify({sections: st.sections}) };
     const res = st.id ? await apiWrite('update','ReportTypes', st.id, payload) : await apiWrite('create','ReportTypes', null, payload);
     if(res.ok){ rtEditor = null; renderReportTypes(); }
-    else { alert('Save failed: ' + (res.error || '')); btn.textContent = st.id ? 'Save changes' : 'Create report type'; btn.disabled = false; }
+    else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = st.id ? 'Save changes' : 'Create report type'; btn.disabled = false; }
   });
 }
 
@@ -2479,7 +2661,7 @@ async function renderJobTicketDetail(root){
   });
   root.querySelectorAll('[data-act="del"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if(!confirm('Delete this report?')) return;
+      if(!(await confirmDialog('Delete this report?'))) return;
       await apiWrite('delete', 'Reports', btn.dataset.id, {});
       renderCustomers();
     });
@@ -2508,7 +2690,7 @@ function openAttachReportPicker(ticket, reportTypes){
       const slug = el.dataset.pick;
       closeSaveModal();
       if(slug === 'fire-alarm'){
-        if(devices.length && !confirm('Start a new blank Fire Alarm Inspection for this ticket? This clears devices currently in the builder.')) return;
+        if(devices.length && !(await confirmDialog('Start a new blank Fire Alarm Inspection for this ticket? This clears devices currently in the builder.', {confirmLabel:'Start new', danger:false}))) return;
         devices = []; certifications = []; codeLib = [];
         setup = {};
         setup.linkedBillingId = crm.billingId;
@@ -2531,15 +2713,17 @@ function openAttachReportPicker(ticket, reportTypes){
 let genericEditorState = null;
 
 async function openGenericReportEditor(reportId, ticket, typeSlug){
+  document.getElementById('genericReportModal').style.display = 'flex';
+  document.getElementById('genericReportBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   let reportRow = null;
   if(reportId){
     reportRow = await apiGet('Reports', reportId);
-    if(!reportRow) return;
+    if(!reportRow){ closeGenericEditor(); return; }
     typeSlug = reportRow.reportType;
   }
   const reportTypes = await apiList('ReportTypes');
   const typeRow = reportTypes.find(t=>t.slug===typeSlug);
-  if(!typeRow){ alert('This report type was not found — it may have been deleted or renamed.'); return; }
+  if(!typeRow){ closeGenericEditor(); showToast('This report type was not found — it may have been deleted or renamed.', 'error'); return; }
   let schema;
   try{ schema = JSON.parse(typeRow.schemaJson); } catch(e){ schema = {sections:[]}; }
   const data = reportRow ? (JSON.parse(reportRow.dataJson || '{}')) : {};
@@ -2548,7 +2732,6 @@ async function openGenericReportEditor(reportId, ticket, typeSlug){
     values: data.values || {}, tables: data.tables || {}
   };
   schema.sections.forEach((sec,si)=>{ if(sec.type === 'table' && !genericEditorState.tables[si]) genericEditorState.tables[si] = []; });
-  document.getElementById('genericReportModal').style.display = 'flex';
   renderGenericEditorForm();
 }
 function closeGenericEditor(){ document.getElementById('genericReportModal').style.display = 'none'; }
@@ -2638,7 +2821,7 @@ async function saveGenericReport(andPreview){
   const res = st.reportId
     ? await apiWrite('update', 'Reports', st.reportId, payload)
     : await apiWrite('create', 'Reports', null, payload);
-  if(!res.ok){ alert('Save failed: ' + (res.error || '')); return; }
+  if(!res.ok){ showToast('Save failed: ' + (res.error || ''), 'error'); return; }
   if(!st.reportId) st.reportId = res.id;
   if(andPreview){
     closeGenericEditor();
@@ -2696,7 +2879,7 @@ document.getElementById('genericReportSavePreview').addEventListener('click', ()
 // location a ticket belongs to first.
 async function openTicketDetailById(id){
   const ticket = await apiGet('JobTickets', id);
-  if(!ticket){ alert('Ticket not found.'); return; }
+  if(!ticket){ showToast('Ticket not found.', 'error'); return; }
   const svc = await apiGet('ServiceLocations', ticket.serviceId);
   crm.billingId = svc ? svc.billingId : null;
   crm.serviceId = ticket.serviceId;
@@ -2705,10 +2888,11 @@ async function openTicketDetailById(id){
   document.querySelector('nav.tabs button[data-tab="customers"]').click();
 }
 
-let newTicketState = {billingId:null, serviceId:null, jobDate:''};
+let newTicketState = {billingId:null, serviceId:null, jobDate:'', repeat:false, repeatUnit:'monthly', repeatInterval:1, repeatCount:12};
 function openNewTicketModal(prefill){
-  newTicketState = Object.assign({billingId:null, serviceId:null, jobDate:''}, prefill||{});
+  newTicketState = Object.assign({billingId:null, serviceId:null, jobDate:'', repeat:false, repeatUnit:'monthly', repeatInterval:1, repeatCount:12}, prefill||{});
   document.getElementById('newTicketModal').style.display = 'flex';
+  document.getElementById('newTicketBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   renderNewTicketBody();
 }
 function closeNewTicketModal(){ document.getElementById('newTicketModal').style.display = 'none'; }
@@ -2733,6 +2917,25 @@ async function renderNewTicketBody(){
       <div class="field"><label>Assigned To</label><input id="ntAssigned" placeholder="Technician name"></div>
       <div class="field" style="grid-column:span 2;"><label>Job Details</label><input id="ntDescription" placeholder="What's this visit for?"></div>
     </div>
+    <div class="field" style="margin-top:2px;">
+      <label class="checkbox-label"><input type="checkbox" id="ntRepeatToggle" ${newTicketState.repeat?'checked':''}> Repeat this ticket on a schedule (weekly, monthly, or yearly — multi-month and multi-year contracts included)</label>
+    </div>
+    <div id="ntRepeatOptions" class="grid c3" style="display:${newTicketState.repeat?'grid':'none'}; margin-top:-2px;">
+      <div class="field"><label>Every</label>
+        <div class="repeat-row">
+          <input type="number" min="1" max="24" id="ntRepeatInterval" value="${newTicketState.repeatInterval}">
+          <select id="ntRepeatUnit">
+            <option value="weekly" ${newTicketState.repeatUnit==='weekly'?'selected':''}>week(s)</option>
+            <option value="monthly" ${newTicketState.repeatUnit==='monthly'?'selected':''}>month(s)</option>
+            <option value="yearly" ${newTicketState.repeatUnit==='yearly'?'selected':''}>year(s)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="grid-column:span 2;"><label>Number of visits</label>
+        <input type="number" min="2" max="60" id="ntRepeatCount" value="${newTicketState.repeatCount}">
+        <div class="repeat-preview" id="ntRepeatPreview"></div>
+      </div>
+    </div>
     <p class="hint">Don't see the customer or site yet? Close this, add it on the Customers tab, then come back.</p>
     <div class="row-actions">
       <button class="btn ghost" id="ntCancel">Cancel</button>
@@ -2753,20 +2956,133 @@ async function renderNewTicketBody(){
       document.getElementById('ntSave').disabled = !newTicketState.serviceId;
     });
   }
+
+  function updateRepeatPreview(){
+    const el = document.getElementById('ntRepeatPreview');
+    if(!el) return;
+    const start = document.getElementById('ntDate').value;
+    if(!start){ el.textContent = 'Pick a job date to preview the schedule.'; return; }
+    const interval = Math.max(1, parseInt(document.getElementById('ntRepeatInterval').value,10) || 1);
+    const unit = document.getElementById('ntRepeatUnit').value;
+    const count = Math.max(2, Math.min(60, parseInt(document.getElementById('ntRepeatCount').value,10) || 2));
+    const last = addInterval(start, unit, interval*(count-1));
+    el.textContent = `Creates ${count} tickets, from ${fmtDate(start)} to ${fmtDate(last)}.`;
+  }
+  document.getElementById('ntDate').addEventListener('change', ()=>{ newTicketState.jobDate = document.getElementById('ntDate').value; updateRepeatPreview(); });
+  document.getElementById('ntRepeatToggle').addEventListener('change', e=>{
+    newTicketState.repeat = e.target.checked;
+    document.getElementById('ntRepeatOptions').style.display = newTicketState.repeat ? 'grid' : 'none';
+    updateRepeatPreview();
+  });
+  document.getElementById('ntRepeatInterval').addEventListener('input', e=>{ newTicketState.repeatInterval = e.target.value; updateRepeatPreview(); });
+  document.getElementById('ntRepeatUnit').addEventListener('change', e=>{ newTicketState.repeatUnit = e.target.value; updateRepeatPreview(); });
+  document.getElementById('ntRepeatCount').addEventListener('input', e=>{ newTicketState.repeatCount = e.target.value; updateRepeatPreview(); });
+  updateRepeatPreview();
+
   document.getElementById('ntSave').addEventListener('click', async ()=>{
     if(!newTicketState.serviceId) return;
-    const btn = document.getElementById('ntSave'); btn.disabled = true; btn.textContent = 'Creating…';
-    const res = await apiWrite('create', 'JobTickets', null, {
+    const startDate = document.getElementById('ntDate').value;
+    const repeat = document.getElementById('ntRepeatToggle').checked;
+    if(repeat && !startDate){ showToast('Pick a job date to start the recurring schedule.', 'error'); return; }
+    const btn = document.getElementById('ntSave'); setBusy(btn, 'Creating…');
+    const base = {
       serviceId: newTicketState.serviceId,
-      jobDate: document.getElementById('ntDate').value,
       jobType: document.getElementById('ntType').value,
       status: document.getElementById('ntStatus').value,
       assignedTo: document.getElementById('ntAssigned').value,
       description: document.getElementById('ntDescription').value
-    });
-    if(!res.ok){ alert('Could not create ticket: ' + (res.error||'')); btn.disabled = false; btn.textContent = 'Create ticket'; return; }
+    };
+
+    if(!repeat){
+      const res = await apiWrite('create', 'JobTickets', null, Object.assign({jobDate: startDate}, base));
+      if(!res.ok){ showToast('Could not create ticket: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = 'Create ticket'; return; }
+      closeNewTicketModal();
+      openTicketDetailById(res.id);
+      return;
+    }
+
+    const interval = Math.max(1, parseInt(document.getElementById('ntRepeatInterval').value,10) || 1);
+    const unit = document.getElementById('ntRepeatUnit').value;
+    const count = Math.max(2, Math.min(60, parseInt(document.getElementById('ntRepeatCount').value,10) || 2));
+    const dataList = [];
+    for(let i=0; i<count; i++){
+      dataList.push(Object.assign({jobDate: addInterval(startDate, unit, interval*i)}, base));
+    }
+    const res = await apiWriteMany('JobTickets', dataList);
+    if(!res.ok || !res.rows || !res.rows.length){ showToast('Could not create tickets: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = 'Create ticket'; return; }
     closeNewTicketModal();
-    openTicketDetailById(res.id);
+    const first = res.rows[0], last = res.rows[res.rows.length-1];
+    showToast(`Created ${res.rows.length} tickets (${first.ticketNo} – ${last.ticketNo}).`, 'success');
+    openTicketDetailById(first.id);
+  });
+}
+
+/* ============================= DASHBOARD ============================= */
+async function renderDashboard(){
+  const root = document.getElementById('dashboardRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [tickets, services, billings] = await Promise.all([
+    apiList('JobTickets'), apiList('ServiceLocations'), apiList('BillingLocations')
+  ]);
+  const svcById = {}; services.forEach(s=>svcById[s.id]=s);
+  const billById = {}; billings.forEach(b=>billById[b.id]=b);
+  const enriched = tickets.map(t=>{
+    const svc = svcById[t.serviceId];
+    const bill = svc ? billById[svc.billingId] : null;
+    return Object.assign({}, t, {_customer: bill ? bill.name : 'Unknown customer', _site: svc ? svc.name : 'Unknown site'});
+  });
+
+  const openStatuses = ['Scheduled','In Progress'];
+  const isOpen = t => openStatuses.includes(t.status || 'Scheduled');
+  const todayStr = new Date().toISOString().slice(0,10);
+  const weekAhead = new Date(); weekAhead.setDate(weekAhead.getDate()+7);
+  const weekAheadStr = weekAhead.toISOString().slice(0,10);
+
+  const overdue = enriched
+    .filter(t => isOpen(t) && t.jobDate && t.jobDate < todayStr)
+    .sort((a,b)=> new Date(a.jobDate) - new Date(b.jobDate));
+  const upcoming = enriched
+    .filter(t => isOpen(t) && t.jobDate && t.jobDate >= todayStr && t.jobDate <= weekAheadStr)
+    .sort((a,b)=> new Date(a.jobDate) - new Date(b.jobDate));
+  const openCount = enriched.filter(isOpen).length;
+  const thisMonthCount = enriched.filter(t => t.jobDate && t.jobDate.slice(0,7) === todayStr.slice(0,7)).length;
+
+  const ticketRow = t => `
+    <div class="report-row">
+      <div>
+        <span class="ticket-no">${t.ticketNo||''}</span>
+        <strong>${t._customer}</strong> <span class="hint" style="display:inline;">— ${t._site}</span>
+        <span class="badge-total" style="border-color:${jobStatusColor(t.status)}; color:${jobStatusColor(t.status)};">${t.status||'Scheduled'}</span>
+        <div class="meta">${t.jobDate?fmtDate(t.jobDate):'No date set'}${t.jobType?' · '+t.jobType:''}${t.assignedTo?' · '+t.assignedTo:''}</div>
+      </div>
+      <div class="btns"><button class="btn ghost sm" data-open-ticket="${t.id}">Open</button></div>
+    </div>`;
+
+  root.innerHTML = `
+    <div class="dash-stats">
+      <div class="dash-stat"><div class="dash-stat-value">${billings.length}</div><div class="dash-stat-label">Customers</div></div>
+      <div class="dash-stat"><div class="dash-stat-value">${services.length}</div><div class="dash-stat-label">Service locations</div></div>
+      <div class="dash-stat"><div class="dash-stat-value">${openCount}</div><div class="dash-stat-label">Open tickets</div></div>
+      <div class="dash-stat${overdue.length ? ' dash-stat-alert' : ''}"><div class="dash-stat-value">${overdue.length}</div><div class="dash-stat-label">Overdue</div></div>
+      <div class="dash-stat"><div class="dash-stat-value">${thisMonthCount}</div><div class="dash-stat-label">Due this month</div></div>
+    </div>
+    <div class="row-actions" style="margin:16px 0 24px;">
+      <button class="btn" id="dashNewTicket">+ New ticket</button>
+    </div>
+    <div class="grid c2" style="align-items:start;">
+      <div>
+        <h2 class="section-title" style="margin-top:0;">Overdue <span class="sub">${overdue.length} ticket${overdue.length===1?'':'s'}</span></h2>
+        ${overdue.length ? overdue.map(ticketRow).join('') : '<div class="crm-empty">Nothing overdue — you\'re all caught up.</div>'}
+      </div>
+      <div>
+        <h2 class="section-title" style="margin-top:0;">Next 7 days <span class="sub">${upcoming.length} ticket${upcoming.length===1?'':'s'}</span></h2>
+        ${upcoming.length ? upcoming.map(ticketRow).join('') : '<div class="crm-empty">Nothing scheduled in the next week.</div>'}
+      </div>
+    </div>`;
+
+  document.getElementById('dashNewTicket').addEventListener('click', ()=> openNewTicketModal());
+  root.querySelectorAll('[data-open-ticket]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openTicketDetailById(btn.dataset.openTicket));
   });
 }
 
@@ -2776,7 +3092,7 @@ let ticketsFilter = {status:'', q:''};
 
 async function renderTicketsTab(){
   const root = document.getElementById('ticketsRoot');
-  root.innerHTML = '<p class="hint">Loading…</p>';
+  root.innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   const [tickets, services, billings] = await Promise.all([
     apiList('JobTickets'), apiList('ServiceLocations'), apiList('BillingLocations')
   ]);
@@ -2835,7 +3151,7 @@ let schedState = (()=>{ const d = new Date(); return {year: d.getFullYear(), mon
 
 async function renderScheduler(){
   const root = document.getElementById('schedulerRoot');
-  root.innerHTML = '<p class="hint">Loading…</p>';
+  root.innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   const tickets = await apiList('JobTickets');
   const byDate = {};
   tickets.forEach(t=>{
@@ -2902,6 +3218,7 @@ async function renderScheduler(){
 /* ============================= ADMIN: USERS ============================= */
 async function openAdminUsers(){
   document.getElementById('adminUsersModal').style.display = 'flex';
+  document.getElementById('adminUsersBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   await renderAdminUsersBody();
 }
 function closeAdminUsers(){ document.getElementById('adminUsersModal').style.display = 'none'; }
@@ -2934,7 +3251,7 @@ async function renderAdminUsersBody(){
     const err = document.getElementById('newUserError');
     err.hidden = true;
     if(!email || !password){ err.textContent = 'Email and password are required.'; err.hidden = false; return; }
-    const btn = document.getElementById('newUserSave'); btn.disabled = true; btn.textContent = 'Adding…';
+    const btn = document.getElementById('newUserSave'); setBusy(btn, 'Adding…');
     const res = await apiWrite('create', 'Users', null, {email, password, role});
     btn.disabled = false; btn.textContent = 'Add user';
     if(!res.ok){ err.textContent = res.error || 'Could not add user.'; err.hidden = false; return; }

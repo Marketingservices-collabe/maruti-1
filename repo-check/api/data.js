@@ -80,22 +80,30 @@ async function updateRow(table, id, data){
 async function deleteRow(table, id){
   await rest(`${encodeURIComponent(table)}?id=eq.${encodeURIComponent(id)}`, {method: 'DELETE'});
 }
+async function insertRows(table, dataArray){
+  return rest(`${encodeURIComponent(table)}`, {
+    method: 'POST',
+    headers: {'Prefer': 'return=representation'},
+    body: JSON.stringify(dataArray)
+  });
+}
 async function nextTicketNo(){
   const result = await rest('rpc/next_ticket_no', {method: 'POST', body: '{}'});
   return result;
 }
-
-async function seedMasterAdminIfNeeded_(){
-  const rows = await selectAll('Users');
-  if(rows.length) return;
-  await insertRow('Users', {email: MASTER_EMAIL, password: MASTER_PASSWORD, role: 'admin'});
+async function nextTicketNos(n){
+  // One RPC call reserves n sequential ticket numbers at once — used by recurring
+  // tickets (multi-month/multi-year schedules) instead of n separate round trips.
+  return rest('rpc/next_ticket_nos', {method: 'POST', body: JSON.stringify({n})});
 }
 
-async function getUserByEmail_(email){
+async function getUserByEmail_(email, users){
   // Plain equality is case-sensitive and ilike treats "_" (common in real emails) as a
   // single-char wildcard, so match the same way the original Sheets backend did: fetch
   // and compare case-insensitively in JS. The Users table is small, so this is cheap.
-  const rows = await selectAll('Users');
+  // Pass an already-fetched `users` array (e.g. from login) to skip a redundant round
+  // trip to Supabase — every one of those costs a Singapore hop.
+  const rows = users || await selectAll('Users');
   return rows.find(u => String(u.email).toLowerCase() === String(email).toLowerCase()) || null;
 }
 
@@ -152,31 +160,43 @@ export default async function handler(req, res){
     if(req.method === 'GET'){
       const {action, sheet, id, billingId, serviceId, jobTicketId, q, token} = req.query;
 
-      const session = await getSession_(token);
-      if(!session) return jsonOut(res, {ok:false, error:'Not authenticated — please log in.', authRequired:true});
-      if(sheet === 'Users' && session.role !== 'admin'){
-        return jsonOut(res, {ok:false, error:'Admin access required.'});
+      const runQuery = async () => {
+        if(action === 'list'){
+          let rows = await selectAll(sheet);
+          if(billingId) rows = rows.filter(r => String(r.billingId) === String(billingId));
+          if(serviceId) rows = rows.filter(r => String(r.serviceId) === String(serviceId));
+          if(jobTicketId) rows = rows.filter(r => String(r.jobTicketId) === String(jobTicketId));
+          return {ok:true, rows};
+        }
+        if(action === 'get'){
+          const row = await selectById(sheet, id);
+          return {ok:true, row};
+        }
+        if(action === 'search'){
+          const query = (q || '').toLowerCase();
+          const [allBilling, allServices] = await Promise.all([selectAll('BillingLocations'), selectAll('ServiceLocations')]);
+          const billing = allBilling.filter(r => !query || String(r.name).toLowerCase().includes(query) || String(r.cityState).toLowerCase().includes(query));
+          const services = allServices.filter(r => !query || String(r.name).toLowerCase().includes(query) || String(r.cityState).toLowerCase().includes(query));
+          return {ok:true, billing, services};
+        }
+        return {ok:false, error:'Unknown action: ' + action};
+      };
+
+      if(sheet === 'Users'){
+        // Needs the role check before it's safe to hand back rows, so this stays
+        // sequential: verify session, then query.
+        const session = await getSession_(token);
+        if(!session) return jsonOut(res, {ok:false, error:'Not authenticated — please log in.', authRequired:true});
+        if(session.role !== 'admin') return jsonOut(res, {ok:false, error:'Admin access required.'});
+        return jsonOut(res, await runQuery());
       }
 
-      if(action === 'list'){
-        let rows = await selectAll(sheet);
-        if(billingId) rows = rows.filter(r => String(r.billingId) === String(billingId));
-        if(serviceId) rows = rows.filter(r => String(r.serviceId) === String(serviceId));
-        if(jobTicketId) rows = rows.filter(r => String(r.jobTicketId) === String(jobTicketId));
-        return jsonOut(res, {ok:true, rows});
-      }
-      if(action === 'get'){
-        const row = await selectById(sheet, id);
-        return jsonOut(res, {ok:true, row});
-      }
-      if(action === 'search'){
-        const query = (q || '').toLowerCase();
-        const [allBilling, allServices] = await Promise.all([selectAll('BillingLocations'), selectAll('ServiceLocations')]);
-        const billing = allBilling.filter(r => !query || String(r.name).toLowerCase().includes(query) || String(r.cityState).toLowerCase().includes(query));
-        const services = allServices.filter(r => !query || String(r.name).toLowerCase().includes(query) || String(r.cityState).toLowerCase().includes(query));
-        return jsonOut(res, {ok:true, billing, services});
-      }
-      return jsonOut(res, {ok:false, error:'Unknown action: ' + action});
+      // Everything else doesn't gate on role, so run the session check and the actual
+      // query concurrently instead of one after another — each is its own round trip
+      // to Supabase, and overlapping them roughly halves the visible latency.
+      const [session, result] = await Promise.all([getSession_(token), runQuery()]);
+      if(!session) return jsonOut(res, {ok:false, error:'Not authenticated — please log in.', authRequired:true});
+      return jsonOut(res, result);
     }
 
     if(req.method === 'POST'){
@@ -186,15 +206,22 @@ export default async function handler(req, res){
       const action = body.action;
 
       if(action === 'login'){
-        await seedMasterAdminIfNeeded_(); // only cost this on the path that actually needs it
         const email = String(body.email || '').trim();
         const password = String(body.password || '');
-        const user = await getUserByEmail_(email);
+        // One fetch of Users covers both the "seed the master admin" check and the
+        // actual lookup — this used to be two separate round trips to Supabase.
+        let users = await selectAll('Users');
+        if(!users.length){
+          const seeded = await insertRow('Users', {email: MASTER_EMAIL, password: MASTER_PASSWORD, role: 'admin'});
+          users = [seeded];
+        }
+        const user = await getUserByEmail_(email, users);
         if(!user || String(user.password) !== password){
           return jsonOut(res, {ok:false, error:'Incorrect email or password.'});
         }
-        await cleanupExpiredSessions_();
-        const session = await makeSession_(user);
+        // Session cleanup doesn't need to happen before creating the new session —
+        // run them concurrently instead of one after another.
+        const [session] = await Promise.all([makeSession_(user), cleanupExpiredSessions_()]);
         return jsonOut(res, {ok:true, token: session.token, expiresAt: session.expiresAt, user:{id:user.id, email:user.email, role:user.role}});
       }
 
@@ -232,6 +259,27 @@ export default async function handler(req, res){
         }
         const row = await insertRow(sheet, data);
         return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo});
+      }
+      if(action === 'createMany'){
+        // Used for recurring tickets (multi-month/multi-year schedules) — creates
+        // several rows in one round trip instead of one create call per occurrence.
+        if(sheet === 'Users') return jsonOut(res, {ok:false, error:'Not supported for Users.'});
+        let dataList = Array.isArray(body.dataList) ? body.dataList.map(d => Object.assign({}, d)) : [];
+        if(dataList.length > 60) return jsonOut(res, {ok:false, error:'Too many tickets at once (max 60).'});
+        if(!dataList.length) return jsonOut(res, {ok:true, rows:[]});
+        if(sheet === 'JobTickets'){
+          const missing = dataList.filter(d => !d.ticketNo).length;
+          if(missing){
+            const nums = await nextTicketNos(missing);
+            let i = 0;
+            dataList = dataList.map(d => d.ticketNo ? d : Object.assign({}, d, {ticketNo: nums[i++]}));
+          }
+        }
+        if(sheet === 'Reports'){
+          dataList = dataList.map(d => d.savedAt ? d : Object.assign({}, d, {savedAt: new Date().toISOString()}));
+        }
+        const rows = await insertRows(sheet, dataList);
+        return jsonOut(res, {ok:true, rows});
       }
       if(action === 'update'){
         const incoming = Object.assign({}, body.data);
