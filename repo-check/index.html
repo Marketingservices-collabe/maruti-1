@@ -15,7 +15,7 @@
   }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--paper); color:var(--ink-2); font-family:var(--sans); font-size:14px; line-height:1.5;}
-  header.topbar{background:var(--ink); color:#EDEFF3; padding:18px 28px; display:flex; align-items:baseline; justify-content:space-between; border-bottom:3px solid var(--red);}
+  header.topbar{background:linear-gradient(180deg,#16294A 0%,var(--ink) 100%); color:#EDEFF3; padding:18px 28px; display:flex; align-items:baseline; justify-content:space-between; border-bottom:3px solid var(--red);}
   header.topbar .brand{display:flex; align-items:center; gap:12px;}
   header.topbar .brand img.logo{height:34px; width:auto; display:block; background:#fff; padding:3px 6px;}
   .doc .cover-logo{display:block; height:64px; width:auto; margin-bottom:14px;}
@@ -30,7 +30,8 @@
   main{max-width:1400px; margin:0 auto; padding:24px 28px 80px;}
   section.tab{display:none;}
   section.tab.active{display:block;}
-  h2.section-title{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--slate); margin:28px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line-strong);}
+  h2.section-title{position:relative; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--slate); margin:28px 0 10px 12px; padding-bottom:6px; border-bottom:1px solid var(--line-strong);}
+  h2.section-title::before{content:''; position:absolute; left:-12px; top:1px; bottom:7px; width:3px; background:var(--red);}
   h2.section-title:first-child{margin-top:0;}
   h2.section-title .sub{text-transform:none; letter-spacing:0; color:var(--slate-light); font-weight:400;}
   .card{background:var(--panel); border:1px solid var(--line); padding:18px 20px; margin-bottom:16px;}
@@ -145,7 +146,7 @@
   .modal-box h3{margin:0 0 14px; font-size:15px; color:var(--ink); text-transform:none; letter-spacing:0; background:none; padding:0;}
 
   /* ============================= Login ============================= */
-  .login-screen{position:fixed; inset:0; background:var(--ink); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
+  .login-screen{position:fixed; inset:0; background:radial-gradient(120% 120% at 15% 10%,#1F3459 0%,var(--ink) 45%,#0B1626 100%); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
   .login-box{background:#fff; width:360px; max-width:100%; padding:34px 30px; border-top:4px solid var(--red); text-align:center;}
   .login-logo{height:44px; width:auto; margin-bottom:16px;}
   .login-box h1{font-size:18px; margin:0 0 4px; color:var(--ink);}
@@ -265,7 +266,7 @@
     nav.tabs button{padding:12px 12px; font-size:12.5px;}
 
     main{padding:16px 14px 70px;}
-    h2.section-title{font-size:12px; margin:22px 0 10px;}
+    h2.section-title{font-size:12px; margin:22px 0 10px 12px;}
 
     .card{padding:14px 16px;}
     .grid.c2, .grid.c3, .grid.c4{grid-template-columns:1fr; gap:10px;}
