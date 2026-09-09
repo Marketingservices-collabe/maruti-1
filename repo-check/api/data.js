@@ -80,9 +80,21 @@ async function updateRow(table, id, data){
 async function deleteRow(table, id){
   await rest(`${encodeURIComponent(table)}?id=eq.${encodeURIComponent(id)}`, {method: 'DELETE'});
 }
+async function insertRows(table, dataArray){
+  return rest(`${encodeURIComponent(table)}`, {
+    method: 'POST',
+    headers: {'Prefer': 'return=representation'},
+    body: JSON.stringify(dataArray)
+  });
+}
 async function nextTicketNo(){
   const result = await rest('rpc/next_ticket_no', {method: 'POST', body: '{}'});
   return result;
+}
+async function nextTicketNos(n){
+  // One RPC call reserves n sequential ticket numbers at once — used by recurring
+  // tickets (multi-month/multi-year schedules) instead of n separate round trips.
+  return rest('rpc/next_ticket_nos', {method: 'POST', body: JSON.stringify({n})});
 }
 
 async function getUserByEmail_(email, users){
@@ -247,6 +259,27 @@ export default async function handler(req, res){
         }
         const row = await insertRow(sheet, data);
         return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo});
+      }
+      if(action === 'createMany'){
+        // Used for recurring tickets (multi-month/multi-year schedules) — creates
+        // several rows in one round trip instead of one create call per occurrence.
+        if(sheet === 'Users') return jsonOut(res, {ok:false, error:'Not supported for Users.'});
+        let dataList = Array.isArray(body.dataList) ? body.dataList.map(d => Object.assign({}, d)) : [];
+        if(dataList.length > 60) return jsonOut(res, {ok:false, error:'Too many tickets at once (max 60).'});
+        if(!dataList.length) return jsonOut(res, {ok:true, rows:[]});
+        if(sheet === 'JobTickets'){
+          const missing = dataList.filter(d => !d.ticketNo).length;
+          if(missing){
+            const nums = await nextTicketNos(missing);
+            let i = 0;
+            dataList = dataList.map(d => d.ticketNo ? d : Object.assign({}, d, {ticketNo: nums[i++]}));
+          }
+        }
+        if(sheet === 'Reports'){
+          dataList = dataList.map(d => d.savedAt ? d : Object.assign({}, d, {savedAt: new Date().toISOString()}));
+        }
+        const rows = await insertRows(sheet, dataList);
+        return jsonOut(res, {ok:true, rows});
       }
       if(action === 'update'){
         const incoming = Object.assign({}, body.data);
