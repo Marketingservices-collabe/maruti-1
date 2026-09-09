@@ -205,6 +205,8 @@
   .spinner{display:inline-block; width:14px; height:14px; border:2px solid var(--line-strong); border-top-color:var(--ink);
     border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; margin-right:8px;}
   @keyframes spin{ to{ transform:rotate(360deg); } }
+  /* Inside a solid dark button (default/danger) a navy-on-navy spinner is invisible — go light there. */
+  .btn:not(.ghost) .spinner{border-color:rgba(255,255,255,.4); border-top-color:#fff;}
 
   /* Toasts — replace jarring native alert() popups */
   .toast-stack{position:fixed; top:18px; right:18px; z-index:1300; display:flex; flex-direction:column; gap:8px; max-width:360px; pointer-events:none;}
@@ -652,6 +654,13 @@ function resolveConfirm_(value){
 document.getElementById('confirmCancel').addEventListener('click', ()=> resolveConfirm_(false));
 document.getElementById('confirmOk').addEventListener('click', ()=> resolveConfirm_(true));
 
+// Puts a spinner in front of a button's label and disables it — the one place every
+// "Saving…" / "Creating…" / "Signing in…" busy-state goes through.
+function setBusy(btn, label){
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>' + label;
+}
+
 /* ============================= AUTH ============================= */
 let authToken = null;
 let currentUser = null; // {id, email, role}
@@ -696,7 +705,7 @@ async function doLogin(){
   const password = document.getElementById('loginPassword').value;
   if(!email || !password){ showLoginScreen('Enter both email and password.'); return; }
   const btn = document.getElementById('loginSubmit');
-  btn.disabled = true; btn.textContent = 'Signing in…';
+  setBusy(btn, 'Signing in…');
   try{
     const res = await backendFetchPost({action:'login', email, password});
     const result = await parseApiResponse(res);
@@ -1720,7 +1729,7 @@ async function renderBillingList(root){
   document.getElementById('btnCreateBilling').addEventListener('click', async ()=>{
     const name = document.getElementById('newBillingName').value.trim();
     if(!name){ showToast('Customer name is required.', 'error'); return; }
-    const btn = document.getElementById('btnCreateBilling'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnCreateBilling'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'BillingLocations', null, {
       name, phone: document.getElementById('newBillingPhone').value,
       address: document.getElementById('newBillingAddress').value,
@@ -1782,7 +1791,7 @@ async function renderBillingDetail(root){
     el.addEventListener('click', ()=>{ crm.serviceId = el.dataset.id; crm.serviceTab = 'details'; crm.view = 'service-detail'; renderCustomers(); });
   });
   document.getElementById('btnSaveBilling').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnSaveBilling'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnSaveBilling'); setBusy(btn, 'Saving…');
     const res = await apiWrite('update', 'BillingLocations', crm.billingId, {
       name: document.getElementById('bName').value, phone: document.getElementById('bPhone').value,
       email: document.getElementById('bEmail').value, address: document.getElementById('bAddress').value,
@@ -1793,7 +1802,7 @@ async function renderBillingDetail(root){
   document.getElementById('btnCreateSvc').addEventListener('click', async ()=>{
     const name = document.getElementById('newSvcName').value.trim();
     if(!name){ showToast('Site name is required.', 'error'); return; }
-    const btn = document.getElementById('btnCreateSvc'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnCreateSvc'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'ServiceLocations', null, {
       billingId: crm.billingId, name,
       contactName: document.getElementById('newSvcContact').value,
@@ -1848,7 +1857,7 @@ async function renderSvcDetailsTab(sub, svc){
     </div>
     <button class="btn sm" id="btnSaveSvc">Save changes</button>`;
   document.getElementById('btnSaveSvc').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnSaveSvc'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnSaveSvc'); setBusy(btn, 'Saving…');
     const res = await apiWrite('update', 'ServiceLocations', svc.id, {
       name: document.getElementById('svcName').value, contactName: document.getElementById('svcContact').value,
       address: document.getElementById('svcAddress').value, cityState: document.getElementById('svcCityState').value,
@@ -1870,7 +1879,7 @@ async function renderSvcNotesTab(sub, svc){
   document.getElementById('btnAddNote').addEventListener('click', async ()=>{
     const text = document.getElementById('newNoteText').value.trim();
     if(!text) return;
-    const btn = document.getElementById('btnAddNote'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnAddNote'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'Notes', null, {serviceId: svc.id, text});
     if(res.ok) renderCustomers(); else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Add note'; btn.disabled = false; }
   });
@@ -1893,7 +1902,7 @@ async function renderSvcAttachmentsTab(sub, svc){
     const file = e.target.files[0];
     if(!file) return;
     if(file.size > 10*1024*1024){ showToast('Keep attachments under 10MB.', 'error'); return; }
-    document.getElementById('attUploadStatus').innerHTML = '<p class="hint">Uploading…</p>';
+    document.getElementById('attUploadStatus').innerHTML = '<p class="hint"><span class="spinner"></span>Uploading…</p>';
     const res = await apiUploadAttachment(svc.id, file);
     if(res.ok) renderCustomers(); else { document.getElementById('attUploadStatus').innerHTML = `<p class="hint">Upload failed: ${res.error||''}</p>`; }
   });
@@ -1946,7 +1955,7 @@ async function renderSvcJobTicketsTab(sub, svc){
         </div>`).join('') : '<div class="crm-empty">No job tickets for this location yet.</div>'}
     </div>`;
   document.getElementById('btnAddJobTicket').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnAddJobTicket'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnAddJobTicket'); setBusy(btn, 'Saving…');
     const res = await apiWrite('create', 'JobTickets', null, {
       serviceId: svc.id,
       jobDate: document.getElementById('jtDate').value,
@@ -1988,7 +1997,7 @@ function openJobTicketEditor(svc, ticket){
     </div>`;
   document.getElementById('modalCancel').addEventListener('click', closeSaveModal);
   document.getElementById('jteSave').addEventListener('click', async ()=>{
-    const btn = document.getElementById('jteSave'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('jteSave'); setBusy(btn, 'Saving…');
     const res = await apiWrite('update', 'JobTickets', ticket.id, {
       jobDate: document.getElementById('jteDate').value,
       jobType: document.getElementById('jteType').value,
@@ -2028,7 +2037,7 @@ async function renderSvcReportsTab(sub, svc){
       </div>`;
     }).join('') : '<div class="crm-empty">No reports saved for this location yet.</div>'}`;
   document.getElementById('btnSaveCurrentReport').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnSaveCurrentReport'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('btnSaveCurrentReport'); setBusy(btn, 'Saving…');
     const jobTicketId = document.getElementById('reportJobTicketSelect').value || '';
     const res = await saveReportToService(svc.id, jobTicketId);
     if(res.ok){ setup.linkedBillingId = svc.billingId; setup.linkedServiceId = svc.id; renderCustomers(); }
@@ -2127,6 +2136,7 @@ document.getElementById('btnUnlinkService').addEventListener('click', ()=>{
 /* ============================= CRM: SAVE-REPORT MODAL (top bar) ============================= */
 function openSaveModal(){
   document.getElementById('saveReportModal').style.display = 'flex';
+  document.getElementById('saveReportBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   saveModalState = {billingId: setup.linkedBillingId || null, serviceId: setup.linkedServiceId || null, jobTicketId: setup.linkedJobTicketId || null};
   renderSaveModalBody();
 }
@@ -2182,7 +2192,7 @@ async function renderSaveModalBody(){
   }
   document.getElementById('modalSave').addEventListener('click', async ()=>{
     if(!saveModalState.serviceId) return;
-    const btn = document.getElementById('modalSave'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('modalSave'); setBusy(btn, 'Saving…');
     const res = await saveReportToService(saveModalState.serviceId, saveModalState.jobTicketId);
     if(res.ok){
       setup.linkedBillingId = saveModalState.billingId;
@@ -2396,7 +2406,7 @@ async function renderReportTypes(){
     renderRtEditor();
   });
   document.getElementById('btnLoadStarterTypes').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btnLoadStarterTypes'); btn.textContent = 'Adding…'; btn.disabled = true;
+    const btn = document.getElementById('btnLoadStarterTypes'); setBusy(btn, 'Adding…');
     const existingSlugs = new Set(types.map(t=>t.slug));
     const errors = [];
     let added = 0;
@@ -2555,7 +2565,7 @@ function renderRtEditor(){
   document.getElementById('rtCancel').addEventListener('click', ()=>{ rtEditor = null; renderRtEditor(); });
   document.getElementById('rtSave').addEventListener('click', async ()=>{
     if(!st.name.trim()){ showToast('Give this report type a name.', 'error'); return; }
-    const btn = document.getElementById('rtSave'); btn.textContent = 'Saving…'; btn.disabled = true;
+    const btn = document.getElementById('rtSave'); setBusy(btn, 'Saving…');
     const payload = { name: st.name.trim(), slug: slugify(st.name), schemaJson: JSON.stringify({sections: st.sections}) };
     const res = st.id ? await apiWrite('update','ReportTypes', st.id, payload) : await apiWrite('create','ReportTypes', null, payload);
     if(res.ok){ rtEditor = null; renderReportTypes(); }
@@ -2664,15 +2674,17 @@ function openAttachReportPicker(ticket, reportTypes){
 let genericEditorState = null;
 
 async function openGenericReportEditor(reportId, ticket, typeSlug){
+  document.getElementById('genericReportModal').style.display = 'flex';
+  document.getElementById('genericReportBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   let reportRow = null;
   if(reportId){
     reportRow = await apiGet('Reports', reportId);
-    if(!reportRow) return;
+    if(!reportRow){ closeGenericEditor(); return; }
     typeSlug = reportRow.reportType;
   }
   const reportTypes = await apiList('ReportTypes');
   const typeRow = reportTypes.find(t=>t.slug===typeSlug);
-  if(!typeRow){ showToast('This report type was not found — it may have been deleted or renamed.', 'error'); return; }
+  if(!typeRow){ closeGenericEditor(); showToast('This report type was not found — it may have been deleted or renamed.', 'error'); return; }
   let schema;
   try{ schema = JSON.parse(typeRow.schemaJson); } catch(e){ schema = {sections:[]}; }
   const data = reportRow ? (JSON.parse(reportRow.dataJson || '{}')) : {};
@@ -2681,7 +2693,6 @@ async function openGenericReportEditor(reportId, ticket, typeSlug){
     values: data.values || {}, tables: data.tables || {}
   };
   schema.sections.forEach((sec,si)=>{ if(sec.type === 'table' && !genericEditorState.tables[si]) genericEditorState.tables[si] = []; });
-  document.getElementById('genericReportModal').style.display = 'flex';
   renderGenericEditorForm();
 }
 function closeGenericEditor(){ document.getElementById('genericReportModal').style.display = 'none'; }
@@ -2842,6 +2853,7 @@ let newTicketState = {billingId:null, serviceId:null, jobDate:'', repeat:false, 
 function openNewTicketModal(prefill){
   newTicketState = Object.assign({billingId:null, serviceId:null, jobDate:'', repeat:false, repeatUnit:'monthly', repeatInterval:1, repeatCount:12}, prefill||{});
   document.getElementById('newTicketModal').style.display = 'flex';
+  document.getElementById('newTicketBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   renderNewTicketBody();
 }
 function closeNewTicketModal(){ document.getElementById('newTicketModal').style.display = 'none'; }
@@ -2933,7 +2945,7 @@ async function renderNewTicketBody(){
     const startDate = document.getElementById('ntDate').value;
     const repeat = document.getElementById('ntRepeatToggle').checked;
     if(repeat && !startDate){ showToast('Pick a job date to start the recurring schedule.', 'error'); return; }
-    const btn = document.getElementById('ntSave'); btn.disabled = true; btn.textContent = 'Creating…';
+    const btn = document.getElementById('ntSave'); setBusy(btn, 'Creating…');
     const base = {
       serviceId: newTicketState.serviceId,
       jobType: document.getElementById('ntType').value,
@@ -3098,6 +3110,7 @@ async function renderScheduler(){
 /* ============================= ADMIN: USERS ============================= */
 async function openAdminUsers(){
   document.getElementById('adminUsersModal').style.display = 'flex';
+  document.getElementById('adminUsersBody').innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
   await renderAdminUsersBody();
 }
 function closeAdminUsers(){ document.getElementById('adminUsersModal').style.display = 'none'; }
@@ -3130,7 +3143,7 @@ async function renderAdminUsersBody(){
     const err = document.getElementById('newUserError');
     err.hidden = true;
     if(!email || !password){ err.textContent = 'Email and password are required.'; err.hidden = false; return; }
-    const btn = document.getElementById('newUserSave'); btn.disabled = true; btn.textContent = 'Adding…';
+    const btn = document.getElementById('newUserSave'); setBusy(btn, 'Adding…');
     const res = await apiWrite('create', 'Users', null, {email, password, role});
     btn.disabled = false; btn.textContent = 'Add user';
     if(!res.ok){ err.textContent = res.error || 'Could not add user.'; err.hidden = false; return; }
