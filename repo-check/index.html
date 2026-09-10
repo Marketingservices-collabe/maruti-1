@@ -1537,11 +1537,19 @@ function loadSample(){
 }
 
 document.getElementById('btnSample').addEventListener('click', loadSample);
-document.getElementById('btnReset').addEventListener('click', async ()=>{
-  if(!(await confirmDialog('Clear all building info and devices?', {confirmLabel:'Clear'}))) return;
-  devices = []; setup = {}; certifications = []; codeLib = [];
+// Wipes the in-progress Fire Alarm builder (devices, certs, code library, building/panel/
+// contact fields) and re-renders every tab that shows that state — used by "Clear all"
+// and, so a completed report doesn't linger for the next customer, right after a
+// successful "Save to Customer".
+function clearBuilderState(){
+  devices = []; setup = {}; certifications = []; codeLib = []; deviceSeq = 1;
   setupFields.forEach(f=>{ const el=document.getElementById('s_'+f); if(el) el.value=''; });
   renderCerts(); renderCodeLib(); renderDevices(); renderDiscrepancies(); renderSetupLinker();
+  refreshCurrentPreview();
+}
+document.getElementById('btnReset').addEventListener('click', async ()=>{
+  if(!(await confirmDialog('Clear all building info and devices?', {confirmLabel:'Clear'}))) return;
+  clearBuilderState();
 });
 document.getElementById('btnPrint').addEventListener('click', ()=>{
   refreshCurrentPreview();
@@ -2079,7 +2087,11 @@ async function renderSvcReportsTab(sub, svc){
     const btn = document.getElementById('btnSaveCurrentReport'); setBusy(btn, 'Saving…');
     const jobTicketId = document.getElementById('reportJobTicketSelect').value || '';
     const res = await saveReportToService(svc.id, jobTicketId);
-    if(res.ok){ setup.linkedBillingId = svc.billingId; setup.linkedServiceId = svc.id; renderCustomers(); }
+    if(res.ok){
+      clearBuilderState(); // the saved devices/setup shouldn't linger for the next customer
+      renderCustomers();
+      showToast('Report saved.', 'success');
+    }
     else { showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save current report here'; btn.disabled = false; }
   });
   sub.querySelectorAll('[data-act="load"]').forEach(btn=>{
@@ -2234,9 +2246,9 @@ async function renderSaveModalBody(){
     const btn = document.getElementById('modalSave'); setBusy(btn, 'Saving…');
     const res = await saveReportToService(saveModalState.serviceId, saveModalState.jobTicketId);
     if(res.ok){
-      setup.linkedBillingId = saveModalState.billingId;
-      setup.linkedServiceId = saveModalState.serviceId;
-      closeSaveModal(); showToast('Report saved.', 'success');
+      closeSaveModal();
+      clearBuilderState(); // the saved devices/setup shouldn't linger for the next customer
+      showToast('Report saved.', 'success');
     }
     else{ showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = 'Save report'; btn.disabled = false; }
   });
