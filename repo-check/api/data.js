@@ -150,6 +150,80 @@ async function uploadAttachment_(data){
   return {id: rec.id, url: fileUrl};
 }
 
+async function sendEmail_(data, session){
+  // Doc §4 — reusable email sending: general customer communication today, Estimates/
+  // Invoices later. Uses Resend (https://resend.com) as the provider — a Vercel-friendly
+  // REST API, no SDK needed. Required env vars:
+  //   RESEND_API_KEY  the account's API key (Resend dashboard → API Keys)
+  //   EMAIL_FROM      a verified sender, e.g. "Maruti <notifications@yourdomain.com>" —
+  //                   falls back to Resend's sandbox address, which only delivers to the
+  //                   account owner's own verified email (fine for testing, not for
+  //                   real customers) until a sending domain is verified.
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  const to = Array.isArray(data.to) ? data.to.filter(Boolean) : [];
+  const cc = Array.isArray(data.cc) ? data.cc.filter(Boolean) : [];
+  const bcc = Array.isArray(data.bcc) ? data.bcc.filter(Boolean) : [];
+  const subject = String(data.subject || '').trim();
+
+  if(!to.length) return {ok:false, error:'At least one recipient is required.'};
+  if(!subject) return {ok:false, error:'Subject is required.'};
+  if(!apiKey) return {ok:false, error:'Email sending is not configured yet — set RESEND_API_KEY (and ideally EMAIL_FROM) in the Vercel project.'};
+
+  // Attachments reference files already uploaded to Supabase Storage (e.g. a service
+  // location's existing Attachments) — fetch and inline each as base64. A single bad
+  // attachment link shouldn't sink the whole send, so skip it rather than throw.
+  let attachments;
+  if(Array.isArray(data.attachments) && data.attachments.length){
+    attachments = [];
+    for(const att of data.attachments){
+      try{
+        const fileRes = await fetch(att.url);
+        if(!fileRes.ok) continue;
+        const buf = Buffer.from(await fileRes.arrayBuffer());
+        attachments.push({filename: att.name || 'attachment', content: buf.toString('base64')});
+      }catch(e){ /* skip a broken attachment rather than failing the whole send */ }
+    }
+  }
+
+  const payload = {
+    from, to, subject,
+    html: data.html || '<p></p>',
+    ...(cc.length ? {cc} : {}),
+    ...(bcc.length ? {bcc} : {}),
+    ...(attachments && attachments.length ? {attachments} : {})
+  };
+
+  let sendOk = true, errorMessage = null;
+  try{
+    const sendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const sendBody = await sendRes.json().catch(()=> ({}));
+    if(!sendRes.ok){ sendOk = false; errorMessage = sendBody.message || `Email provider error (${sendRes.status})`; }
+  }catch(e){ sendOk = false; errorMessage = String(e && e.message || e); }
+
+  // Log regardless of outcome — a failed send should still show up in history, not
+  // vanish, so the office can see it needs a resend.
+  try{
+    await insertRow('EmailLog', {
+      billingId: data.billingId || null,
+      toEmails: to.join(', '),
+      ccEmails: cc.join(', '),
+      bccEmails: bcc.join(', '),
+      subject,
+      documentRef: data.documentRef || 'General communication',
+      sentBy: session.email,
+      status: sendOk ? 'sent' : 'failed',
+      errorMessage
+    });
+  }catch(e){ /* logging failure shouldn't mask the send result */ }
+
+  return sendOk ? {ok:true} : {ok:false, error: errorMessage};
+}
+
 function jsonOut(res, obj){
   res.setHeader('Content-Type', 'application/json');
   res.status(200).send(JSON.stringify(obj));
@@ -236,6 +310,11 @@ export default async function handler(req, res){
       if(action === 'uploadAttachment'){
         const result = await uploadAttachment_(body.data || {});
         return jsonOut(res, {ok:true, ...result});
+      }
+
+      if(action === 'sendEmail'){
+        const result = await sendEmail_(body.data || {}, session);
+        return jsonOut(res, result);
       }
 
       const sheet = body.sheet;

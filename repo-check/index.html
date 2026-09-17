@@ -653,6 +653,17 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="emailComposerModal">
+  <div class="row-editor-sheet" style="width:min(620px,94vw);">
+    <div class="row-editor-header">
+      <button class="btn ghost sm" id="ecCancel">Cancel</button>
+      <div class="row-editor-title">Send Email</div>
+      <button class="btn sm" id="ecSend">Send</button>
+    </div>
+    <div class="row-editor-body" id="emailComposerBody"></div>
+  </div>
+</div>
+
 </div><!-- /appShell -->
 
 <script>
@@ -1737,6 +1748,132 @@ async function apiUploadAttachment(serviceId, file){
   });
 }
 
+/* ============================= EMAIL COMPOSER (reusable) ============================= */
+// Doc §4 — reusable across general customer communication now, Estimates/Invoices
+// later. Callers pass: billing (drives the recipient picker + email history),
+// documentRef (label shown in history, e.g. "General communication" / later
+// "Estimate #EST-1001"), placeholders (a {token: value} map — only tokens actually
+// available in this context are offered as "insert" chips), and optionally
+// attachments (already-uploaded files, e.g. from a service location) plus a default
+// subject/body.
+let emailComposerState = null;
+
+async function apiSendEmail(data){
+  try{
+    const res = await backendFetchPost({action:'sendEmail', token: authToken || '', data});
+    const result = await parseApiResponse(res);
+    if(checkAuthFailure_(result)) return result;
+    return result;
+  }catch(e){ console.error(e); return {ok:false, error:String(e)}; }
+}
+
+async function openEmailComposer(opts){
+  const billing = opts.billing || null;
+  const custEmails = billing ? await apiList('CustomerEmails', {billingId: billing.id}) : [];
+  emailComposerState = {
+    billing, documentRef: opts.documentRef || 'General communication',
+    placeholders: opts.placeholders || {}, attachments: opts.attachments || [],
+    custEmails, selectedTo: new Set(custEmails.filter(e=>e.isPrimary).map(e=>e.id)),
+    subject: opts.defaultSubject || '', bodyText: opts.defaultBody || ''
+  };
+  document.getElementById('emailComposerModal').style.display = 'flex';
+  renderEmailComposer();
+}
+function closeEmailComposer(){
+  document.getElementById('emailComposerModal').style.display = 'none';
+  emailComposerState = null;
+}
+
+function renderEmailComposer(){
+  const st = emailComposerState;
+  const body = document.getElementById('emailComposerBody');
+  const placeholderKeys = Object.keys(st.placeholders);
+  body.innerHTML = `
+    ${st.custEmails.length ? `
+    <div class="field"><label>To</label>
+      <div class="chip-row">
+        ${st.custEmails.map(e=>`<label class="checkbox-label" style="border:1px solid var(--line); border-radius:4px; padding:4px 9px; margin:0;">
+          <input type="checkbox" data-to-email="${e.id}" ${st.selectedTo.has(e.id)?'checked':''}> ${e.email} <span class="hint" style="display:inline;">(${e.label||'Other'})</span>
+        </label>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="grid c2">
+      <div class="field"><label>${st.custEmails.length?'Additional recipients':'To'}</label><input id="ecExtraTo" placeholder="name@example.com, other@example.com"></div>
+      <div class="field"><label>CC</label><input id="ecCc" placeholder="name@example.com"></div>
+    </div>
+    <div class="field"><label>BCC</label><input id="ecBcc" placeholder="name@example.com"></div>
+    <div class="field"><label>Subject</label><input id="ecSubject" value="${(st.subject||'').replace(/"/g,'&quot;')}"></div>
+    ${placeholderKeys.length ? `
+    <div class="field">
+      <label>Insert placeholder</label>
+      <div class="chip-row">
+        ${placeholderKeys.map(k=>`<button type="button" class="btn ghost sm" data-insert="{{${k}}}">{{${k}}}</button>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="field"><label>Message</label><textarea id="ecBody" rows="9">${st.bodyText||''}</textarea></div>
+    ${st.attachments.length ? `
+    <div class="field"><label>Attachments</label>
+      <div class="chip-row">
+        ${st.attachments.map((a,i)=>`<label class="checkbox-label" style="border:1px solid var(--line); border-radius:4px; padding:4px 9px; margin:0;">
+          <input type="checkbox" data-att-idx="${i}" checked> ${a.name}
+        </label>`).join('')}
+      </div>
+    </div>` : ''}`;
+
+  body.querySelectorAll('[data-to-email]').forEach(cb=>{
+    cb.addEventListener('change', e=>{
+      if(e.target.checked) st.selectedTo.add(cb.dataset.toEmail); else st.selectedTo.delete(cb.dataset.toEmail);
+    });
+  });
+  body.querySelectorAll('[data-insert]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const ta = document.getElementById('ecBody');
+      const start = ta.selectionStart ?? ta.value.length, end = ta.selectionEnd ?? ta.value.length;
+      ta.value = ta.value.slice(0,start) + btn.dataset.insert + ta.value.slice(end);
+      ta.focus();
+    });
+  });
+}
+
+document.getElementById('ecCancel').addEventListener('click', closeEmailComposer);
+document.getElementById('ecSend').addEventListener('click', async ()=>{
+  const st = emailComposerState;
+  if(!st) return;
+  const to = st.custEmails.filter(e=>st.selectedTo.has(e.id)).map(e=>e.email);
+  const extra = document.getElementById('ecExtraTo').value.split(',').map(s=>s.trim()).filter(Boolean);
+  to.push(...extra);
+  const cc = document.getElementById('ecCc').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const bcc = document.getElementById('ecBcc').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const subjectRaw = document.getElementById('ecSubject').value.trim();
+  const bodyRaw = document.getElementById('ecBody').value;
+  if(!to.length){ showToast('Add at least one recipient.', 'error'); return; }
+  if(!subjectRaw){ showToast('Subject is required.', 'error'); return; }
+
+  // Placeholders were typed as literal {{Tokens}} — swap in real values right before
+  // sending, so what the recipient sees is never the raw token.
+  const applyPlaceholders = s => Object.keys(st.placeholders).reduce((acc,k)=> acc.split('{{'+k+'}}').join(st.placeholders[k] ?? ''), s);
+  const subject = applyPlaceholders(subjectRaw);
+  const bodyText = applyPlaceholders(bodyRaw);
+  const html = '<div style="font-family:sans-serif; font-size:14px; white-space:pre-wrap;">' + bodyText.replace(/</g,'&lt;') + '</div>';
+
+  const selectedAttachments = st.attachments.filter((a,i)=>{
+    const cb = document.querySelector(`[data-att-idx="${i}"]`);
+    return cb ? cb.checked : true;
+  });
+
+  const btn = document.getElementById('ecSend'); setBusy(btn, 'Sending…');
+  const res = await apiSendEmail({
+    to, cc, bcc, subject, html,
+    billingId: st.billing ? st.billing.id : null,
+    documentRef: st.documentRef,
+    attachments: selectedAttachments.map(a=>({url:a.url, name:a.name}))
+  });
+  if(!res.ok){ showToast('Could not send: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = 'Send'; return; }
+  const sentBilling = st.billing;
+  closeEmailComposer();
+  showToast('Email sent.', 'success');
+  if(sentBilling) renderEmailHistory(sentBilling);
+});
 
 
 /* ============================= CRM: STATE ============================= */
@@ -1830,6 +1967,12 @@ async function renderBillingDetail(root){
         <h2 class="section-title">Email Addresses <span class="sub">— for estimates, invoices &amp; general communication</span></h2>
         <div id="custEmailsList"></div>
         <div id="custEmailFormRoot"></div>
+
+        <h2 class="section-title">Email History</h2>
+        <div class="row-actions" style="margin:-4px 0 10px;">
+          <button class="btn ghost sm" id="btnSendCustEmail">✉ Send Email</button>
+        </div>
+        <div id="emailHistoryList"></div>
       </div>
       <div class="crm-detail-pane">
         <div class="search" style="padding:0 0 12px;"><input id="serviceSearchInput" placeholder="Search service locations…" value="${crm.serviceSearch}"></div>
@@ -1881,7 +2024,15 @@ async function renderBillingDetail(root){
     if(res.ok){ crm.serviceId = res.id; crm.serviceTab = 'details'; crm.view = 'service-detail'; renderCustomers(); }
     else{ showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = '+ Add service location'; btn.disabled = false; }
   });
+  document.getElementById('btnSendCustEmail').addEventListener('click', ()=>{
+    openEmailComposer({
+      billing: b,
+      documentRef: 'General communication',
+      placeholders: {CustomerName: b.name || '', CompanyName: 'Maruti'}
+    });
+  });
   renderCustEmails(b);
+  renderEmailHistory(b);
 }
 
 /* ============================= CRM: CUSTOMER EMAIL ADDRESSES ============================= */
@@ -1994,6 +2145,23 @@ function openCustEmailForm(billing, existing){
     renderCustEmailsListOnly(billing, fresh);
     showToast(existing ? 'Email updated.' : 'Email added.', 'success');
   });
+}
+
+async function renderEmailHistory(billing){
+  const el = document.getElementById('emailHistoryList');
+  if(!el) return; // navigated away before this resolved
+  el.innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
+  const logs = await apiList('EmailLog', {billingId: billing.id});
+  logs.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+  el.innerHTML = logs.length ? logs.map(l=>`
+    <div class="crm-note">
+      <div class="meta">${l.createdAt?fmtDate(String(l.createdAt).slice(0,10)):''} · ${l.sentBy||''} · ${l.documentRef||'General communication'}
+        <span class="badge-total" style="border-color:${l.status==='sent'?'var(--green)':'var(--red)'}; color:${l.status==='sent'?'var(--green)':'var(--red)'};">${l.status==='sent'?'Sent':'Failed'}</span>
+      </div>
+      <div><strong>${l.subject||'(no subject)'}</strong></div>
+      <div class="hint">To: ${l.toEmails||''}${l.ccEmails?' · Cc: '+l.ccEmails:''}</div>
+      ${l.status!=='sent' && l.errorMessage ? `<div class="hint" style="color:var(--red);">${String(l.errorMessage).replace(/</g,'&lt;')}</div>` : ''}
+    </div>`).join('') : '<div class="crm-empty" style="padding:16px;">No emails sent yet.</div>';
 }
 
 /* ============================= CRM: SERVICE LOCATION DETAIL (Details / Notes / Attachments / Reports) ============================= */
