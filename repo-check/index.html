@@ -1826,6 +1826,10 @@ async function renderBillingDetail(root){
         <div class="field"><label>City, State ZIP</label><input id="bCityState" value="${b.cityState||''}"></div>
         <div class="field"><label>Notes</label><textarea id="bNotes" rows="4">${b.notes||''}</textarea></div>
         <button class="btn sm" id="btnSaveBilling">Save changes</button>
+
+        <h2 class="section-title">Email Addresses <span class="sub">— for estimates, invoices &amp; general communication</span></h2>
+        <div id="custEmailsList"></div>
+        <div id="custEmailFormRoot"></div>
       </div>
       <div class="crm-detail-pane">
         <div class="search" style="padding:0 0 12px;"><input id="serviceSearchInput" placeholder="Search service locations…" value="${crm.serviceSearch}"></div>
@@ -1876,6 +1880,119 @@ async function renderBillingDetail(root){
     });
     if(res.ok){ crm.serviceId = res.id; crm.serviceTab = 'details'; crm.view = 'service-detail'; renderCustomers(); }
     else{ showToast('Save failed: ' + (res.error || ''), 'error'); btn.textContent = '+ Add service location'; btn.disabled = false; }
+  });
+  renderCustEmails(b);
+}
+
+/* ============================= CRM: CUSTOMER EMAIL ADDRESSES ============================= */
+// Doc §3 — a customer can have several labeled emails plus one designated Primary.
+// The original single BillingLocations.email field is left completely alone: it still
+// shows and saves exactly as it always has, in the "Customer details" panel above this.
+const CUSTOMER_EMAIL_LABELS = ['Primary','Billing','Accounts Payable','Office','Owner','Other'];
+
+async function renderCustEmails(billing){
+  const list = document.getElementById('custEmailsList');
+  if(!list) return; // navigated away before this resolved
+  list.innerHTML = '<p class="hint"><span class="spinner"></span>Loading…</p>';
+  let emails = await apiList('CustomerEmails', {billingId: billing.id});
+  // Lazy backfill: a customer from before multi-email existed just has the one `email`
+  // field — mirror it in as the Primary row the first time this loads, so nothing needs
+  // a manual migration and existing customers keep working with zero extra steps.
+  if(!emails.length && billing.email){
+    const seeded = await apiWrite('create', 'CustomerEmails', null, {billingId: billing.id, email: billing.email, label: 'Primary', isPrimary: true});
+    if(seeded.ok) emails = await apiList('CustomerEmails', {billingId: billing.id});
+  }
+  renderCustEmailsListOnly(billing, emails);
+}
+
+function renderCustEmailsListOnly(billing, emails){
+  const list = document.getElementById('custEmailsList');
+  if(!list) return;
+  const sorted = emails.slice().sort((a,b)=> (b.isPrimary?1:0)-(a.isPrimary?1:0) || (a.label||'').localeCompare(b.label||''));
+  list.innerHTML = (sorted.length ? sorted.map(e=>`
+    <div class="attachment-row">
+      <div>
+        <strong>${e.email}</strong>
+        <span class="badge-total">${e.label||'Other'}</span>
+        ${e.isPrimary ? '<span class="badge-total" style="border-color:var(--green); color:var(--green);">★ Primary</span>' : ''}
+      </div>
+      <div class="btns">
+        ${e.isPrimary ? '' : `<button class="btn ghost sm" data-act="makeprimary" data-id="${e.id}">Make primary</button>`}
+        <button class="btn ghost sm" data-act="edit" data-id="${e.id}">Edit</button>
+        <button class="del-btn" data-act="del" data-id="${e.id}" title="Delete">✕</button>
+      </div>
+    </div>`).join('') : '<div class="crm-empty" style="padding:16px;">No email addresses yet.</div>')
+    + `<button class="btn ghost sm" id="btnAddCustEmail" style="margin-top:8px;">+ Add email</button>`;
+
+  document.getElementById('btnAddCustEmail').addEventListener('click', ()=> openCustEmailForm(billing, null));
+  list.querySelectorAll('[data-act="edit"]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openCustEmailForm(billing, sorted.find(e=>e.id===btn.dataset.id)));
+  });
+  list.querySelectorAll('[data-act="makeprimary"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const prior = sorted.find(e=>e.isPrimary);
+      if(prior) await apiWrite('update', 'CustomerEmails', prior.id, {isPrimary:false});
+      await apiWrite('update', 'CustomerEmails', btn.dataset.id, {isPrimary:true});
+      renderCustEmailsListOnly(billing, await apiList('CustomerEmails', {billingId: billing.id}));
+    });
+  });
+  list.querySelectorAll('[data-act="del"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!(await confirmDialog('Remove this email address?', {confirmLabel:'Remove'}))) return;
+      const wasPrimary = !!(sorted.find(e=>e.id===btn.dataset.id)||{}).isPrimary;
+      const res = await apiWrite('delete', 'CustomerEmails', btn.dataset.id, {});
+      if(!res.ok){ showToast('Could not remove: ' + (res.error||''), 'error'); return; }
+      let fresh = await apiList('CustomerEmails', {billingId: billing.id});
+      if(wasPrimary && fresh.length && !fresh.some(e=>e.isPrimary)){
+        await apiWrite('update', 'CustomerEmails', fresh[0].id, {isPrimary:true});
+        fresh = await apiList('CustomerEmails', {billingId: billing.id});
+      }
+      renderCustEmailsListOnly(billing, fresh);
+    });
+  });
+}
+
+function closeCustEmailForm(){ const el = document.getElementById('custEmailFormRoot'); if(el) el.innerHTML = ''; }
+
+function openCustEmailForm(billing, existing){
+  const el = document.getElementById('custEmailFormRoot');
+  el.innerHTML = `
+    <div class="card" style="margin-top:8px; padding:12px 14px;">
+      <div class="field"><label>Email</label><input id="ceEmail" value="${(existing?existing.email:'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>Label</label>
+        <select id="ceLabel">${CUSTOMER_EMAIL_LABELS.map(l=>`<option value="${l}" ${(existing?existing.label:'')===l?'selected':''}>${l}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label class="checkbox-label"><input type="checkbox" id="cePrimary" ${existing&&existing.isPrimary?'checked':''}> Set as primary</label></div>
+      <div class="row-actions">
+        <button class="btn ghost sm" id="ceCancel">Cancel</button>
+        <button class="btn sm" id="ceSave">${existing?'Save changes':'Add email'}</button>
+      </div>
+    </div>`;
+  document.getElementById('ceCancel').addEventListener('click', closeCustEmailForm);
+  document.getElementById('ceSave').addEventListener('click', async ()=>{
+    const email = document.getElementById('ceEmail').value.trim();
+    if(!email){ showToast('Email address is required.', 'error'); return; }
+    const btn = document.getElementById('ceSave'); setBusy(btn, 'Saving…');
+    const data = {
+      billingId: billing.id, email,
+      label: document.getElementById('ceLabel').value,
+      isPrimary: document.getElementById('cePrimary').checked
+    };
+    const res = existing
+      ? await apiWrite('update', 'CustomerEmails', existing.id, data)
+      : await apiWrite('create', 'CustomerEmails', null, data);
+    if(!res.ok){ showToast('Save failed: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = existing?'Save changes':'Add email'; return; }
+    let fresh = await apiList('CustomerEmails', {billingId: billing.id});
+    if(data.isPrimary){
+      // exactly one primary — demote every other row that still claims it
+      const savedId = existing ? existing.id : res.id;
+      const others = fresh.filter(e => e.id !== savedId && e.isPrimary);
+      for(const e of others){ await apiWrite('update', 'CustomerEmails', e.id, {isPrimary:false}); }
+      if(others.length) fresh = await apiList('CustomerEmails', {billingId: billing.id});
+    }
+    closeCustEmailForm();
+    renderCustEmailsListOnly(billing, fresh);
+    showToast(existing ? 'Email updated.' : 'Email added.', 'success');
   });
 }
 
