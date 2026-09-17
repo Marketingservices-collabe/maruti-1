@@ -254,6 +254,58 @@
   .pb-cost{font-family:var(--mono); color:var(--slate-light); font-size:11.5px;}
   .pb-inactive-row{opacity:.6;}
 
+  /* ============================= Estimates: line-item editor ============================= */
+  .li-row{display:grid; grid-template-columns:2fr 64px 90px 70px 64px 26px; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line);}
+  .li-row input, .li-row select{font-size:12.5px; padding:6px 7px;}
+  .li-row .li-total{font-family:var(--mono); font-size:12.5px; text-align:right; color:var(--ink-2); white-space:nowrap;}
+  .li-row-head{display:grid; grid-template-columns:2fr 64px 90px 70px 64px 26px; gap:8px; padding:0 0 6px; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--slate); border-bottom:1px solid var(--line-strong);}
+
+  /* ============================= Estimate document (Estimate/Invoice PDFs) ============================= */
+  .est-doc{background:#fff; border:1px solid var(--line); max-width:820px; margin:0 auto; padding:40px 46px;}
+  .est-doc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:20px; padding-bottom:22px; border-bottom:2px solid var(--ink); margin-bottom:22px; flex-wrap:wrap;}
+  .est-doc-brand img{height:44px; width:auto; margin-bottom:10px; display:block;}
+  .est-doc-brand .co-name{font-weight:700; font-size:16px; color:var(--ink);}
+  .est-doc-brand .co-line{font-size:12px; color:var(--slate); line-height:1.5;}
+  .est-doc-meta{text-align:right;}
+  .est-doc-meta h1{font-size:23px; margin:0 0 6px; color:var(--ink); letter-spacing:.03em;}
+  .est-doc-meta .num{font-family:var(--mono); font-size:14px; color:var(--slate); margin-bottom:8px;}
+  .est-doc-meta .kv{font-size:12.5px; color:var(--slate); margin:2px 0;}
+  .est-doc-meta .kv b{color:var(--ink-2);}
+  .est-doc-parties{display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px;}
+  .est-doc-parties h4{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--slate); margin:0 0 6px; border-bottom:1px solid var(--line-strong); padding-bottom:4px;}
+  .est-doc-parties .name{font-weight:600; color:var(--ink-2); margin-bottom:2px;}
+  .est-doc-parties .line{font-size:13px; color:var(--slate);}
+  .est-doc-scroll{overflow-x:auto;}
+  table.est-items{width:100%; border-collapse:collapse; margin-bottom:6px; min-width:520px;}
+  table.est-items th{background:var(--ink); color:#fff; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; padding:8px 10px; text-align:left; white-space:nowrap;}
+  table.est-items th.num, table.est-items td.num{text-align:right;}
+  table.est-items td{padding:9px 10px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:top;}
+  table.est-items td .item-desc{font-size:11.5px; color:var(--slate-light); margin-top:2px;}
+  .est-doc-totals{margin-left:auto; width:280px; max-width:100%; margin-top:14px;}
+  .est-doc-totals .row{display:flex; justify-content:space-between; font-size:13px; padding:5px 0; color:var(--slate);}
+  .est-doc-totals .row.total{font-size:16px; font-weight:700; color:var(--ink); border-top:2px solid var(--ink); margin-top:6px; padding-top:10px;}
+  .est-doc-notes{margin-top:28px; padding-top:16px; border-top:1px solid var(--line);}
+  .est-doc-notes h4{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--slate); margin:0 0 6px;}
+  .est-doc-notes p{font-size:12.5px; color:var(--slate); line-height:1.6; white-space:pre-wrap; margin:0 0 14px;}
+  .est-status-ribbon{display:inline-block; font-family:var(--mono); font-size:12px; letter-spacing:.04em; text-transform:uppercase; padding:5px 14px; border-radius:3px; margin-bottom:18px;}
+
+  /* Public (no-login) estimate page — its own tiny "app" outside the normal shell */
+  .public-est-page{min-height:100vh; background:var(--paper); padding:32px 16px 60px;}
+  .public-est-topbar{max-width:820px; margin:0 auto 20px; display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:600;}
+  .public-est-actions{max-width:820px; margin:22px auto 0; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;}
+  .public-est-actions .btn{min-width:180px;}
+  .public-est-note{max-width:820px; margin:16px auto 0; text-align:center; color:var(--slate); font-size:13px;}
+
+  @media (max-width:720px){
+    .est-doc{padding:22px 16px;}
+    .est-doc-parties{grid-template-columns:1fr;}
+    .est-doc-totals{width:100%;}
+    .li-row, .li-row-head{grid-template-columns:1fr; gap:4px;}
+    .li-row-head{display:none;}
+    .li-row{padding:10px 0;}
+    .public-est-actions .btn{min-width:0; width:100%;}
+  }
+
   /* ============================= RESPONSIVE: iPad / tablet ============================= */
   @media (max-width: 1024px){
     main{padding:20px 18px 70px;}
@@ -353,6 +405,8 @@
   </div>
 </div>
 
+<div id="publicEstimatePage" class="public-est-page" style="display:none;"></div>
+
 <div id="loginScreen" class="login-screen">
   <div class="login-box">
     <img class="login-logo" id="loginLogo" alt="Company logo">
@@ -390,6 +444,7 @@
   <button data-tab="tickets">Tickets</button>
   <button data-tab="scheduler">Scheduler</button>
   <button data-tab="customers">Customers</button>
+  <button data-tab="estimates">Estimates</button>
   <span class="tabs-divider" aria-hidden="true"></span>
   <button data-tab="setup">Building, Panel &amp; Certs</button>
   <button data-tab="devices">Devices <span class="count" id="cntDevices">0</span></button>
@@ -598,6 +653,12 @@
   <section class="tab" id="tab-pricebook">
     <h2 class="section-title">Price Book <span class="sub">— billable services, inspections, repairs, labor, materials &amp; parts, priced once and reused on estimates and invoices</span></h2>
     <div id="priceBookRoot"></div>
+  </section>
+
+  <!-- ================= ESTIMATES TAB ================= -->
+  <section class="tab" id="tab-estimates">
+    <h2 class="section-title">Estimates <span class="sub">— quote the work, get customer approval, then it's ready to invoice</span></h2>
+    <div id="estimatesRoot"></div>
   </section>
 
 </main>
@@ -875,6 +936,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     if(btn.dataset.tab==='customers') renderCustomers();
     if(btn.dataset.tab==='reporttypes') renderReportTypes();
     if(btn.dataset.tab==='pricebook') renderPriceBook();
+    if(btn.dataset.tab==='estimates') renderEstimatesTab();
     if(btn.dataset.tab==='setup') renderSetupLinker();
     if(btn.dataset.tab==='tickets') renderTicketsTab();
     if(btn.dataset.tab==='scheduler') renderScheduler();
@@ -3719,6 +3781,683 @@ function renderPbEditor(){
   });
 }
 
+/* ============================= ESTIMATES (doc §6-11) ============================= */
+// Customer -> Service Location -> optional Job Ticket -> line items (Price Book or
+// custom) -> Draft -> Sent -> Viewed -> Approved/Rejected -> Converted, plus Expired/
+// Cancelled. The customer-facing approve/reject page is a separate, no-login view of
+// this same document (see renderPublicEstimatePage near the bottom of this file) —
+// renderEstimateDocumentHtml() is shared by both so what staff sees in "Export PDF"
+// and what the customer opens from their email are exactly the same document.
+const ESTIMATE_STATUSES = ['Draft','Sent','Viewed','Approved','Rejected','Expired','Cancelled','Converted'];
+function estimateStatusColor(status){
+  if(status === 'Approved' || status === 'Converted') return 'var(--green)';
+  if(status === 'Rejected' || status === 'Expired' || status === 'Cancelled') return 'var(--red)';
+  if(status === 'Sent' || status === 'Viewed') return 'var(--amber)';
+  return 'var(--slate)'; // Draft
+}
+function estimateDisplayStatus(e){
+  // Mirrors the backend's lazy-expiry check for display purposes without needing a
+  // write — the stored status gets corrected for real the moment the estimate (or its
+  // public link) is actually opened.
+  const todayStr = new Date().toISOString().slice(0,10);
+  if((e.status === 'Sent' || e.status === 'Viewed') && e.expirationDate && e.expirationDate < todayStr) return 'Expired';
+  return e.status || 'Draft';
+}
+function computeEstimateTotals(lineItems, discountType, discountValue, taxRatePct){
+  const lineNet = li => (parseFloat(li.quantity)||0) * (parseFloat(li.unitPrice)||0) - (parseFloat(li.discount)||0);
+  const subtotal = lineItems.reduce((sum,li)=> sum + lineNet(li), 0);
+  const dv = parseFloat(discountValue) || 0;
+  const discountAmt = discountType === 'percent' ? subtotal * (dv/100) : Math.min(dv, subtotal);
+  const afterDiscount = Math.max(0, subtotal - discountAmt);
+  // Tax applies only to the taxable share of the (discounted) subtotal — items are
+  // individually flagged taxable, so prorate the discount across taxable vs not.
+  const taxableSubtotal = lineItems.reduce((sum,li)=> li.taxable ? sum + lineNet(li) : sum, 0);
+  const taxableRatio = subtotal > 0 ? taxableSubtotal / subtotal : 0;
+  const taxAmt = (afterDiscount * taxableRatio) * ((parseFloat(taxRatePct)||0)/100);
+  return {subtotal, discountAmt, taxAmt, total: afterDiscount + taxAmt};
+}
+function estimatePublicUrl(id){
+  return `${location.origin}${location.pathname}?estimate=${id}`;
+}
+
+/* ---- shared document template: used by the internal detail view, PDF export, and
+   the public (no-login) customer page ---- */
+function renderEstimateDocumentHtml(e, lineItems, billing, service, company, opts){
+  opts = opts || {};
+  const status = opts.status || e.status;
+  const co = company || {};
+  const rows = lineItems.map(li=>{
+    const lineTotal = (parseFloat(li.quantity)||0)*(parseFloat(li.unitPrice)||0) - (parseFloat(li.discount)||0);
+    return `<tr>
+      <td>${li.name||''}${li.description?`<div class="item-desc">${String(li.description).replace(/</g,'&lt;')}</div>`:''}</td>
+      <td class="num">${li.quantity}</td>
+      <td class="num">${pbMoney(li.unitPrice)}</td>
+      <td class="num">${li.discount?pbMoney(li.discount):'—'}</td>
+      <td class="num">${pbMoney(lineTotal)}</td>
+    </tr>`;
+  }).join('');
+  const discountLabel = e.discountType === 'percent' ? `${e.discountValue||0}%` : pbMoney(e.discountValue||0);
+  // Matches computeEstimateTotals()'s clamp — a flat discount can never exceed the
+  // subtotal, so the displayed Discount/Total lines always add up correctly.
+  const discountAmt = e.discountType === 'percent'
+    ? (parseFloat(e.subtotal)||0) * (parseFloat(e.discountValue)||0)/100
+    : Math.min(parseFloat(e.discountValue)||0, parseFloat(e.subtotal)||0);
+  const ribbonColor = estimateStatusColor(status);
+  return `
+    <div class="est-doc" id="estDocRoot">
+      ${status && status !== 'Draft' ? `<span class="est-status-ribbon" style="background:${ribbonColor}22; color:${ribbonColor}; border:1px solid ${ribbonColor};">${status}</span>` : ''}
+      <div class="est-doc-head">
+        <div class="est-doc-brand">
+          <img src="${co.logoUrl || LOGO_DATA_URI}" alt="Company logo">
+          <div class="co-name">${co.name || 'Your Company'}</div>
+          <div class="co-line">${[co.address, co.phone, co.email, co.website].filter(Boolean).join(' · ')}</div>
+        </div>
+        <div class="est-doc-meta">
+          <h1>ESTIMATE</h1>
+          <div class="num">${e.estimateNo||''}</div>
+          <div class="kv"><b>Date:</b> ${e.estimateDate?fmtDate(e.estimateDate):'—'}</div>
+          <div class="kv"><b>Expires:</b> ${e.expirationDate?fmtDate(e.expirationDate):'—'}</div>
+          ${e.preparedBy ? `<div class="kv"><b>Prepared by:</b> ${e.preparedBy}</div>` : ''}
+        </div>
+      </div>
+      <div class="est-doc-parties">
+        <div><h4>Customer</h4><div class="name">${billing?billing.name:'—'}</div>
+          ${billing&&billing.address?`<div class="line">${billing.address}</div>`:''}
+          ${billing&&billing.cityState?`<div class="line">${billing.cityState}</div>`:''}
+          ${billing&&billing.phone?`<div class="line">${billing.phone}</div>`:''}
+        </div>
+        <div><h4>Service Location</h4><div class="name">${service?service.name:'—'}</div>
+          ${service&&service.address?`<div class="line">${service.address}</div>`:''}
+          ${service&&service.cityState?`<div class="line">${service.cityState}</div>`:''}
+        </div>
+      </div>
+      <div class="est-doc-scroll">
+        <table class="est-items">
+          <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Discount</th><th class="num">Line Total</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" style="text-align:center; color:var(--slate-light);">No line items</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="est-doc-totals">
+        <div class="row">Subtotal<span>${pbMoney(e.subtotal)}</span></div>
+        <div class="row">Discount${e.discountValue?' ('+discountLabel+')':''}<span>-${pbMoney(discountAmt)}</span></div>
+        <div class="row">Tax${e.taxRate?' ('+e.taxRate+'%)':''}<span>${pbMoney(e.taxAmount)}</span></div>
+        <div class="row total">Total<span>${pbMoney(e.total)}</span></div>
+      </div>
+      ${e.notes ? `<div class="est-doc-notes"><h4>Notes</h4><p>${String(e.notes).replace(/</g,'&lt;')}</p></div>` : ''}
+      ${e.termsConditions ? `<div class="est-doc-notes"><h4>Terms &amp; Conditions</h4><p>${String(e.termsConditions).replace(/</g,'&lt;')}</p></div>` : ''}
+    </div>`;
+}
+
+function exportEstimatePdf(){
+  const el = document.getElementById('estDocRoot');
+  if(!el){ showToast('Nothing to export yet.', 'error'); return; }
+  const busy = document.getElementById('pdfBusy');
+  busy.style.display = 'flex';
+  const opt = {
+    margin: 0, filename: (estimateDetailState.estimate.estimateNo||'estimate')+'.pdf',
+    image: {type:'jpeg', quality:0.98}, html2canvas: {scale:2, useCORS:true},
+    jsPDF: {unit:'mm', format:'letter', orientation:'portrait'}
+  };
+  setTimeout(()=>{
+    try{
+      if(typeof html2pdf === 'undefined') throw new Error('html2pdf did not load');
+      html2pdf().set(opt).from(el).save().then(()=>{ busy.style.display='none'; })
+        .catch(()=>{ busy.style.display='none'; showToast('PDF export failed — try again.', 'error'); });
+    }catch(err){
+      busy.style.display = 'none';
+      showToast('PDF export failed to start.', 'error');
+    }
+  }, 150);
+}
+
+/* ---- tab state ---- */
+let estimatesView = 'list'; // 'list' | 'editor' | 'detail'
+let estimateRows = [];
+let estimatesFilter = {status:'', q:''};
+let estimateEditor = null;
+let estimateDetailState = null;
+let estPbPickerOpen = false;
+let estLineIdSeq = 0;
+// A client-only key for tracking line-item rows in the editor before they're saved —
+// deliberately its own counter, not the Fire Alarm builder's uid()/deviceSeq (reusing
+// that would bump device numbering every time someone edits an estimate).
+function newEstLineId(){ return 'eli' + (estLineIdSeq++); }
+
+async function renderEstimatesTab(){
+  if(estimatesView === 'editor') return renderEstimateEditor();
+  if(estimatesView === 'detail') return renderEstimateDetailView();
+  return renderEstimatesList();
+}
+
+/* ---- list ---- */
+async function renderEstimatesList(){
+  const root = document.getElementById('estimatesRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [estimates, billings, services] = await Promise.all([
+    apiList('Estimates'), apiList('BillingLocations'), apiList('ServiceLocations')
+  ]);
+  const billById = {}; billings.forEach(b=>billById[b.id]=b);
+  const svcById = {}; services.forEach(s=>svcById[s.id]=s);
+  estimateRows = estimates.map(e=> Object.assign({}, e, {
+    _customer: billById[e.billingId] ? billById[e.billingId].name : 'Unknown customer',
+    _site: svcById[e.serviceId] ? svcById[e.serviceId].name : 'Unknown site',
+    _displayStatus: estimateDisplayStatus(e)
+  }));
+  root.innerHTML = `
+    <div class="ticket-filters">
+      <button class="btn sm" id="btnNewEstimate">+ New estimate</button>
+      <div class="field" style="margin:0;"><label>Search</label><input id="estSearch" placeholder="Estimate #, customer, site…" value="${estimatesFilter.q.replace(/"/g,'&quot;')}"></div>
+      <div class="field" style="margin:0;"><label>Status</label>
+        <select id="estStatusFilter"><option value="">All</option>${ESTIMATE_STATUSES.map(s=>`<option value="${s}" ${estimatesFilter.status===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div id="estimatesList"></div>`;
+  document.getElementById('btnNewEstimate').addEventListener('click', ()=> openEstimateEditor(null));
+  document.getElementById('estSearch').addEventListener('input', e=>{ estimatesFilter.q = e.target.value; renderEstimatesListOnly(); });
+  document.getElementById('estStatusFilter').addEventListener('change', e=>{ estimatesFilter.status = e.target.value; renderEstimatesListOnly(); });
+  renderEstimatesListOnly();
+}
+
+function renderEstimatesListOnly(){
+  let rows = estimateRows.slice();
+  if(estimatesFilter.status) rows = rows.filter(r => r._displayStatus === estimatesFilter.status);
+  if(estimatesFilter.q){
+    const q = estimatesFilter.q.toLowerCase();
+    rows = rows.filter(r => (r.estimateNo||'').toLowerCase().includes(q) || r._customer.toLowerCase().includes(q) || r._site.toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+  const list = document.getElementById('estimatesList');
+  list.innerHTML = rows.length ? rows.map(r=>`
+    <div class="report-row">
+      <div>
+        <span class="ticket-no">${r.estimateNo||''}</span>
+        <strong>${r._customer}</strong> <span class="hint" style="display:inline;">— ${r._site}</span>
+        <span class="badge-total" style="border-color:${estimateStatusColor(r._displayStatus)}; color:${estimateStatusColor(r._displayStatus)};">${r._displayStatus}</span>
+        <div class="meta">${r.estimateDate?fmtDate(r.estimateDate):''}${r.expirationDate?' · expires '+fmtDate(r.expirationDate):''} · <span class="pb-price">${pbMoney(r.total)}</span></div>
+      </div>
+      <div class="btns"><button class="btn ghost sm" data-open="${r.id}">View</button></div>
+    </div>`).join('') : '<div class="crm-empty">No estimates match — try a different search, or create one.</div>';
+  list.querySelectorAll('[data-open]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openEstimateDetail(btn.dataset.open));
+  });
+}
+
+/* ---- editor (create/edit a Draft) ---- */
+async function openEstimateEditor(existing){
+  estimatesView = 'editor';
+  const root = document.getElementById('estimatesRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [billings, priceBookItems, companyRows] = await Promise.all([
+    apiList('BillingLocations'), apiList('PriceBookItems'), apiList('CompanySettings')
+  ]);
+  let lineItems = [];
+  if(existing){
+    lineItems = await apiList('EstimateLineItems', {estimateId: existing.id});
+    lineItems.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  }
+  estimateEditor = existing ? {
+    id: existing.id, estimateNo: existing.estimateNo,
+    billingId: existing.billingId, serviceId: existing.serviceId, jobTicketId: existing.jobTicketId,
+    estimateDate: existing.estimateDate || new Date().toISOString().slice(0,10),
+    expirationDate: existing.expirationDate || '',
+    preparedBy: existing.preparedBy || (currentUser?currentUser.email:''),
+    notes: existing.notes || '', termsConditions: existing.termsConditions || '',
+    discountType: existing.discountType || 'percent', discountValue: existing.discountValue || 0,
+    taxRate: existing.taxRate || 0,
+    lineItems: lineItems.map(li=>({localId: newEstLineId(), id: li.id, priceBookItemId: li.priceBookItemId,
+      name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice,
+      discount: li.discount, taxable: !!li.taxable}))
+  } : {
+    id: null, estimateNo: null, billingId: null, serviceId: null, jobTicketId: null,
+    estimateDate: new Date().toISOString().slice(0,10), expirationDate: '',
+    preparedBy: currentUser ? currentUser.email : '',
+    notes: '', termsConditions: (companyRows[0] && companyRows[0].termsConditions) || '',
+    discountType: 'percent', discountValue: 0, taxRate: 0, lineItems: []
+  };
+  estimateEditor._priceBookItems = priceBookItems.filter(p=>p.active!==false);
+  estimateEditor._billings = billings;
+  renderEstimateEditor();
+}
+
+function renderEstimateEditor(){
+  const root = document.getElementById('estimatesRoot');
+  const st = estimateEditor;
+  const totals = computeEstimateTotals(st.lineItems, st.discountType, st.discountValue, st.taxRate);
+  root.innerHTML = `
+    <div class="crm-breadcrumb"><a id="estBackToList">Estimates</a> / ${st.id ? 'Edit '+(st.estimateNo||'') : 'New estimate'}</div>
+    <div class="card">
+      <h2 class="section-title" style="margin-top:0;">Customer &amp; Service Location</h2>
+      <div class="grid c3">
+        <div class="field"><label>Customer</label>
+          <select id="estBillingSelect"><option value="">— select —</option>${st._billings.map(b=>`<option value="${b.id}" ${st.billingId===b.id?'selected':''}>${b.name}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Service Location</label><select id="estServiceSelect"><option value="">— select customer first —</option></select></div>
+        <div class="field"><label>Job Ticket (optional)</label><select id="estTicketSelect"><option value="">— none —</option></select></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label>Estimate Date</label><input type="date" id="estDate" value="${st.estimateDate}"></div>
+        <div class="field"><label>Expiration Date</label><input type="date" id="estExpiry" value="${st.expirationDate}"></div>
+        <div class="field"><label>Prepared By</label><input id="estPreparedBy" value="${(st.preparedBy||'').replace(/"/g,'&quot;')}"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title" style="margin-top:0;">Line Items</h2>
+      <div class="row-actions" style="margin-bottom:10px;">
+        <button class="btn ghost sm" id="estAddFromPb">+ Add from Price Book</button>
+        <button class="btn ghost sm" id="estAddCustom">+ Add custom line</button>
+      </div>
+      <div id="estPbPickerRoot"></div>
+      <div class="li-row-head"><div>Item</div><div>Qty</div><div>Unit Price</div><div>Discount</div><div>Tax</div><div></div></div>
+      <div id="estLineItemsRoot"></div>
+      <div class="est-doc-totals" style="margin-top:16px; width:100%; max-width:360px;">
+        <div class="row">Subtotal<span>${pbMoney(totals.subtotal)}</span></div>
+        <div class="row">Discount<span>-${pbMoney(totals.discountAmt)}</span></div>
+        <div class="row">Tax<span>${pbMoney(totals.taxAmt)}</span></div>
+        <div class="row total">Total<span>${pbMoney(totals.total)}</span></div>
+      </div>
+      <div class="grid c3" style="margin-top:14px;">
+        <div class="field"><label>Discount Type</label><select id="estDiscType"><option value="percent" ${st.discountType==='percent'?'selected':''}>%</option><option value="flat" ${st.discountType==='flat'?'selected':''}>$ flat</option></select></div>
+        <div class="field"><label>Discount Value</label><input type="number" step="0.01" id="estDiscValue" value="${st.discountValue}"></div>
+        <div class="field"><label>Tax Rate (%)</label><input type="number" step="0.01" id="estTaxRate" value="${st.taxRate}"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title" style="margin-top:0;">Notes &amp; Terms</h2>
+      <div class="field"><label>Notes (shown to customer)</label><textarea id="estNotes" rows="3">${st.notes||''}</textarea></div>
+      <div class="field"><label>Terms &amp; Conditions</label><textarea id="estTerms" rows="4">${st.termsConditions||''}</textarea></div>
+    </div>
+
+    <div class="row-actions">
+      <button class="btn ghost" id="estCancelEdit">Cancel</button>
+      <button class="btn" id="estSaveDraft">${st.id ? 'Save changes' : 'Save as Draft'}</button>
+    </div>`;
+
+  document.getElementById('estBackToList').addEventListener('click', ()=>{ estimatesView='list'; renderEstimatesTab(); });
+  document.getElementById('estCancelEdit').addEventListener('click', ()=>{ estimatesView='list'; renderEstimatesTab(); });
+  document.getElementById('estBillingSelect').addEventListener('change', e=>{
+    st.billingId = e.target.value; st.serviceId = null; st.jobTicketId = null;
+    populateEstServiceAndTicket();
+  });
+  document.getElementById('estDate').addEventListener('change', e=> st.estimateDate = e.target.value);
+  document.getElementById('estExpiry').addEventListener('change', e=> st.expirationDate = e.target.value);
+  document.getElementById('estPreparedBy').addEventListener('input', e=> st.preparedBy = e.target.value);
+  document.getElementById('estNotes').addEventListener('input', e=> st.notes = e.target.value);
+  document.getElementById('estTerms').addEventListener('input', e=> st.termsConditions = e.target.value);
+  document.getElementById('estDiscType').addEventListener('change', e=>{ st.discountType = e.target.value; renderEstimateTotalsOnly(); });
+  document.getElementById('estDiscValue').addEventListener('input', e=>{ st.discountValue = e.target.value; renderEstimateTotalsOnly(); });
+  document.getElementById('estTaxRate').addEventListener('input', e=>{ st.taxRate = e.target.value; renderEstimateTotalsOnly(); });
+  document.getElementById('estAddFromPb').addEventListener('click', ()=>{ estPbPickerOpen = !estPbPickerOpen; renderEstPbPicker(); });
+  document.getElementById('estAddCustom').addEventListener('click', ()=>{
+    st.lineItems.push({localId: newEstLineId(), id:null, priceBookItemId:null, name:'', description:'', quantity:1, unitPrice:0, discount:0, taxable:false});
+    renderEstimateLineItemsOnly();
+  });
+  document.getElementById('estSaveDraft').addEventListener('click', saveEstimateDraft);
+
+  renderEstPbPicker();
+  renderEstimateLineItemsOnly();
+  populateEstServiceAndTicket();
+}
+
+async function populateEstServiceAndTicket(){
+  const st = estimateEditor;
+  const svcSel = document.getElementById('estServiceSelect');
+  if(!svcSel) return;
+  if(!st.billingId){ svcSel.innerHTML = '<option value="">— select customer first —</option>'; return; }
+  const services = await apiList('ServiceLocations', {billingId: st.billingId});
+  svcSel.innerHTML = '<option value="">— select —</option>' + services.map(s=>`<option value="${s.id}" ${st.serviceId===s.id?'selected':''}>${s.name}</option>`).join('');
+  svcSel.onchange = e=>{ st.serviceId = e.target.value; st.jobTicketId = null; populateEstTicketOnly(); };
+  await populateEstTicketOnly();
+}
+async function populateEstTicketOnly(){
+  const st = estimateEditor;
+  const jtSel = document.getElementById('estTicketSelect');
+  if(!jtSel) return;
+  if(!st.serviceId){ jtSel.innerHTML = '<option value="">— none —</option>'; return; }
+  const tickets = await apiList('JobTickets', {serviceId: st.serviceId});
+  jtSel.innerHTML = '<option value="">— none —</option>' + tickets.map(t=>`<option value="${t.id}" ${st.jobTicketId===t.id?'selected':''}>${t.ticketNo||'Ticket'} — ${t.jobDate?fmtDate(t.jobDate):'no date'}</option>`).join('');
+  jtSel.onchange = e=>{ st.jobTicketId = e.target.value; };
+}
+
+function renderEstPbPicker(){
+  const el = document.getElementById('estPbPickerRoot');
+  if(!el) return;
+  if(!estPbPickerOpen){ el.innerHTML = ''; return; }
+  const st = estimateEditor;
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:12px; padding:12px 14px;">
+      <div class="field" style="margin-bottom:8px;"><input id="estPbSearch" placeholder="Search price book…"></div>
+      <div id="estPbResults" style="max-height:220px; overflow-y:auto;"></div>
+    </div>`;
+  const renderResults = (q)=>{
+    const query = (q||'').toLowerCase();
+    const matches = st._priceBookItems.filter(p => !query || (p.name||'').toLowerCase().includes(query) || (p.sku||'').toLowerCase().includes(query)).slice(0,30);
+    document.getElementById('estPbResults').innerHTML = matches.length ? matches.map(p=>`
+      <div class="crm-item" data-pick="${p.id}"><div class="name">${p.name}</div><div class="sub">${p.category||''} · ${pbMoney(p.price)}${p.sku?' · '+p.sku:''}</div></div>
+    `).join('') : '<div class="crm-empty">No matches.</div>';
+    document.querySelectorAll('#estPbResults [data-pick]').forEach(el2=>{
+      el2.addEventListener('click', ()=>{
+        const item = st._priceBookItems.find(p=>p.id===el2.dataset.pick);
+        // The Price Book's current price is copied onto the line item right now — if the
+        // Price Book price changes later, this estimate must not change (doc §7).
+        st.lineItems.push({
+          localId: newEstLineId(), id:null, priceBookItemId: item.id,
+          name: item.name, description: item.description || '',
+          quantity: item.defaultQty || 1, unitPrice: item.price || 0, discount: 0, taxable: !!item.taxable
+        });
+        estPbPickerOpen = false;
+        renderEstPbPicker();
+        renderEstimateLineItemsOnly();
+      });
+    });
+  };
+  renderResults('');
+  document.getElementById('estPbSearch').addEventListener('input', e=> renderResults(e.target.value));
+}
+
+function renderEstimateLineItemsOnly(){
+  const st = estimateEditor;
+  const root = document.getElementById('estLineItemsRoot');
+  if(!root) return;
+  root.innerHTML = st.lineItems.length ? st.lineItems.map(li=>`
+    <div class="li-row" data-local="${li.localId}">
+      <div>
+        <input type="text" data-f="name" placeholder="Item name" value="${(li.name||'').replace(/"/g,'&quot;')}">
+        <input type="text" data-f="description" placeholder="Description (optional)" value="${(li.description||'').replace(/"/g,'&quot;')}" style="margin-top:4px;">
+      </div>
+      <input type="number" step="0.01" data-f="quantity" value="${li.quantity}">
+      <input type="number" step="0.01" data-f="unitPrice" value="${li.unitPrice}">
+      <input type="number" step="0.01" data-f="discount" value="${li.discount||0}" title="Line discount ($)">
+      <label class="checkbox-label" style="margin:0; justify-content:center;"><input type="checkbox" data-f="taxable" ${li.taxable?'checked':''}></label>
+      <button class="del-btn" data-del="${li.localId}" title="Remove">✕</button>
+    </div>`).join('') : '<div class="crm-empty" style="padding:16px;">No line items yet — add one from the Price Book or a custom line.</div>';
+
+  root.querySelectorAll('.li-row').forEach(rowEl=>{
+    const li = st.lineItems.find(x=>x.localId===rowEl.dataset.local);
+    rowEl.querySelectorAll('[data-f]').forEach(inp=>{
+      const field = inp.dataset.f;
+      inp.addEventListener(inp.type==='checkbox' ? 'change' : 'input', ()=>{
+        li[field] = inp.type==='checkbox' ? inp.checked : inp.value;
+        renderEstimateTotalsOnly();
+      });
+    });
+  });
+  root.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      st.lineItems = st.lineItems.filter(x=>x.localId !== btn.dataset.del);
+      renderEstimateLineItemsOnly();
+    });
+  });
+  renderEstimateTotalsOnly();
+}
+
+function renderEstimateTotalsOnly(){
+  const st = estimateEditor;
+  const box = document.querySelector('#estimatesRoot .est-doc-totals');
+  if(!box) return;
+  const totals = computeEstimateTotals(st.lineItems, st.discountType, st.discountValue, st.taxRate);
+  const rows = box.querySelectorAll('.row');
+  if(rows[0]) rows[0].innerHTML = `Subtotal<span>${pbMoney(totals.subtotal)}</span>`;
+  if(rows[1]) rows[1].innerHTML = `Discount<span>-${pbMoney(totals.discountAmt)}</span>`;
+  if(rows[2]) rows[2].innerHTML = `Tax<span>${pbMoney(totals.taxAmt)}</span>`;
+  if(rows[3]) rows[3].innerHTML = `Total<span>${pbMoney(totals.total)}</span>`;
+}
+
+async function saveEstimateDraft(){
+  const st = estimateEditor;
+  if(!st.billingId || !st.serviceId){ showToast('Pick a customer and service location.', 'error'); return; }
+  if(!st.lineItems.length){ showToast('Add at least one line item.', 'error'); return; }
+  const btn = document.getElementById('estSaveDraft'); setBusy(btn, 'Saving…');
+  const totals = computeEstimateTotals(st.lineItems, st.discountType, st.discountValue, st.taxRate);
+  const payload = {
+    billingId: st.billingId, serviceId: st.serviceId, jobTicketId: st.jobTicketId || null,
+    estimateDate: st.estimateDate, expirationDate: st.expirationDate || null,
+    preparedBy: st.preparedBy, notes: st.notes, termsConditions: st.termsConditions,
+    discountType: st.discountType, discountValue: parseFloat(st.discountValue)||0,
+    taxRate: parseFloat(st.taxRate)||0,
+    subtotal: totals.subtotal, taxAmount: totals.taxAmt, total: totals.total
+  };
+  let estimateId = st.id;
+  const res = st.id
+    ? await apiWrite('update', 'Estimates', st.id, payload)
+    : await apiWrite('create', 'Estimates', null, payload);
+  if(!res.ok){ showToast('Save failed: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = st.id ? 'Save changes' : 'Save as Draft'; return; }
+  if(!st.id) estimateId = res.id;
+
+  // Simplest correct way to persist line items on every save: replace the whole set
+  // (small counts per estimate, so this is cheap) rather than diffing row by row.
+  const oldItems = st.id ? await apiList('EstimateLineItems', {estimateId}) : [];
+  for(const old of oldItems){ await apiWrite('delete', 'EstimateLineItems', old.id, {}); }
+  const dataList = st.lineItems.map((li,i)=>({
+    estimateId, priceBookItemId: li.priceBookItemId || null,
+    name: li.name, description: li.description,
+    quantity: parseFloat(li.quantity)||0, unitPrice: parseFloat(li.unitPrice)||0,
+    discount: parseFloat(li.discount)||0, taxable: !!li.taxable, sortOrder: i
+  }));
+  if(dataList.length) await apiWriteMany('EstimateLineItems', dataList);
+
+  await apiWrite('create', 'EstimateActivity', null, {
+    estimateId, action: st.id ? 'Edited' : 'Created', actorName: currentUser ? currentUser.email : ''
+  });
+
+  showToast(st.id ? 'Estimate updated.' : 'Estimate created.', 'success');
+  await openEstimateDetail(estimateId);
+}
+
+/* ---- detail / document view ---- */
+async function openEstimateDetail(id){
+  estimatesView = 'detail';
+  const root = document.getElementById('estimatesRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [estimate, lineItems, activity, companyRows] = await Promise.all([
+    apiGet('Estimates', id),
+    apiList('EstimateLineItems', {estimateId: id}),
+    apiList('EstimateActivity', {estimateId: id}),
+    apiList('CompanySettings')
+  ]);
+  if(!estimate){ showToast('Estimate not found.', 'error'); estimatesView = 'list'; return renderEstimatesTab(); }
+  const [billing, service] = await Promise.all([
+    estimate.billingId ? apiGet('BillingLocations', estimate.billingId) : null,
+    estimate.serviceId ? apiGet('ServiceLocations', estimate.serviceId) : null
+  ]);
+  lineItems.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  activity.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+  estimateDetailState = {estimate, lineItems, billing, service, activity, company: companyRows[0] || null};
+  renderEstimateDetailView();
+}
+
+function renderEstimateDetailView(){
+  const root = document.getElementById('estimatesRoot');
+  const st = estimateDetailState;
+  const e = st.estimate;
+  const displayStatus = estimateDisplayStatus(e);
+  const docHtml = renderEstimateDocumentHtml(e, st.lineItems, st.billing, st.service, st.company, {status: displayStatus});
+
+  root.innerHTML = `
+    <div class="crm-breadcrumb"><a id="estBackToList2">Estimates</a> / ${e.estimateNo}</div>
+    <div class="row-actions" style="margin-bottom:14px; flex-wrap:wrap;">
+      ${displayStatus === 'Draft' ? `<button class="btn ghost sm" id="estEditBtn">Edit</button>` : ''}
+      <button class="btn sm" id="estSendBtn">${e.sentAt ? 'Resend' : 'Send'} Estimate</button>
+      <button class="btn ghost sm" id="estDuplicateBtn">Duplicate</button>
+      <button class="btn ghost sm" id="estExportPdfBtn">Export PDF</button>
+      <button class="btn ghost sm" id="estCopyLinkBtn">Copy Customer Link</button>
+      ${!['Cancelled','Converted'].includes(displayStatus) ? `<button class="btn ghost sm" id="estCancelBtn">Cancel Estimate</button>` : ''}
+      <button class="btn ghost sm" disabled title="Coming once the Invoices module is added">Convert to Invoice</button>
+    </div>
+    ${docHtml}
+    <div class="card" style="margin-top:20px;">
+      <h2 class="section-title" style="margin-top:0;">Activity</h2>
+      ${st.activity.length ? st.activity.map(a=>`
+        <div class="crm-note"><div class="meta">${a.createdAt?fmtDate(String(a.createdAt).slice(0,10)):''} · ${a.actorName||''}</div><div>${a.action}${a.detail?': '+String(a.detail).replace(/</g,'&lt;'):''}</div></div>
+      `).join('') : '<div class="crm-empty">No activity yet.</div>'}
+    </div>`;
+
+  document.getElementById('estBackToList2').addEventListener('click', ()=>{ estimatesView='list'; renderEstimatesTab(); });
+  if(document.getElementById('estEditBtn')) document.getElementById('estEditBtn').addEventListener('click', ()=> openEstimateEditor(e));
+  document.getElementById('estSendBtn').addEventListener('click', ()=> sendEstimateFlow(e));
+  document.getElementById('estDuplicateBtn').addEventListener('click', duplicateEstimate);
+  document.getElementById('estExportPdfBtn').addEventListener('click', exportEstimatePdf);
+  document.getElementById('estCopyLinkBtn').addEventListener('click', ()=> copyEstimateLink(e.id));
+  if(document.getElementById('estCancelBtn')) document.getElementById('estCancelBtn').addEventListener('click', cancelEstimate);
+}
+
+async function copyEstimateLink(id){
+  const url = estimatePublicUrl(id);
+  try{ await navigator.clipboard.writeText(url); showToast('Link copied to clipboard.', 'success'); }
+  catch(e){ showToast('Could not copy automatically — link: ' + url, 'info'); }
+}
+
+async function sendEstimateFlow(e){
+  const st = estimateDetailState;
+  if(!st.lineItems.length){ showToast('Add at least one line item before sending.', 'error'); return; }
+  const wasDraft = e.status === 'Draft';
+  if(wasDraft){
+    const res = await apiWrite('update', 'Estimates', e.id, {status:'Sent', sentAt: new Date().toISOString()});
+    if(!res.ok){ showToast('Could not mark as sent: ' + (res.error||''), 'error'); return; }
+    e.status = 'Sent';
+  }
+  const actorName = currentUser ? currentUser.email : '';
+  await apiWrite('create', 'EstimateActivity', null, {estimateId: e.id, action:'Sent', detail: wasDraft?null:'Resent', actorName});
+  st.activity.unshift({action:'Sent', detail: wasDraft?null:'Resent', actorName, createdAt: new Date().toISOString()});
+  renderEstimateDetailView();
+
+  const billing = st.billing;
+  const companyName = (st.company && st.company.name) || 'us';
+  const url = estimatePublicUrl(e.id);
+  const bodyParts = [
+    'Hi {{CustomerName}},',
+    'Please find your estimate {{EstimateNumber}} for {{AmountDue}} ready for review.',
+    `View, approve, or ask questions here: ${url}`
+  ];
+  if(e.expirationDate) bodyParts.push('This estimate is valid until {{DueDate}}.');
+  const bodyLines = bodyParts.join('\n\n') + '\n\nThank you,\n{{CompanyName}}';
+  openEmailComposer({
+    billing, documentRef: `Estimate ${e.estimateNo}`,
+    placeholders: {
+      CustomerName: billing?billing.name:'', CompanyName: companyName,
+      EstimateNumber: e.estimateNo, AmountDue: pbMoney(e.total),
+      DueDate: e.expirationDate ? fmtDate(e.expirationDate) : ''
+    },
+    defaultSubject: `Estimate ${e.estimateNo} from ${companyName}`,
+    defaultBody: bodyLines
+  });
+}
+
+async function duplicateEstimate(){
+  const st = estimateDetailState;
+  const e = st.estimate;
+  const btn = document.getElementById('estDuplicateBtn'); setBusy(btn, 'Duplicating…');
+  const payload = {
+    billingId: e.billingId, serviceId: e.serviceId, jobTicketId: e.jobTicketId,
+    estimateDate: new Date().toISOString().slice(0,10), expirationDate: e.expirationDate,
+    preparedBy: e.preparedBy, notes: e.notes, termsConditions: e.termsConditions,
+    discountType: e.discountType, discountValue: e.discountValue, taxRate: e.taxRate,
+    subtotal: e.subtotal, taxAmount: e.taxAmount, total: e.total
+  };
+  const res = await apiWrite('create', 'Estimates', null, payload);
+  if(!res.ok){ showToast('Could not duplicate: ' + (res.error||''), 'error'); btn.disabled=false; btn.textContent='Duplicate'; return; }
+  const dataList = st.lineItems.map((li,i)=>({
+    estimateId: res.id, priceBookItemId: li.priceBookItemId, name: li.name, description: li.description,
+    quantity: li.quantity, unitPrice: li.unitPrice, discount: li.discount, taxable: li.taxable, sortOrder: i
+  }));
+  if(dataList.length) await apiWriteMany('EstimateLineItems', dataList);
+  await apiWrite('create', 'EstimateActivity', null, {estimateId: res.id, action:'Created', detail:`Duplicated from ${e.estimateNo}`, actorName: currentUser?currentUser.email:''});
+  showToast('Duplicated as a new Draft.', 'success');
+  await openEstimateDetail(res.id);
+}
+
+async function cancelEstimate(){
+  if(!(await confirmDialog('Cancel this estimate? This cannot be undone.', {confirmLabel:'Cancel Estimate'}))) return;
+  const e = estimateDetailState.estimate;
+  const res = await apiWrite('update', 'Estimates', e.id, {status:'Cancelled'});
+  if(!res.ok){ showToast('Could not cancel: ' + (res.error||''), 'error'); return; }
+  await apiWrite('create', 'EstimateActivity', null, {estimateId: e.id, action:'Cancelled', actorName: currentUser?currentUser.email:''});
+  e.status = 'Cancelled';
+  showToast('Estimate cancelled.', 'success');
+  renderEstimateDetailView();
+}
+
+/* ---- public (no-login) customer view — see the boot check near the end of this file ---- */
+async function renderPublicEstimatePage(id){
+  const root = document.getElementById('publicEstimatePage');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  let json;
+  try{
+    const res = await fetch(API_PROXY_PATH + '?' + new URLSearchParams({action:'publicEstimate', id}).toString());
+    json = await parseApiResponse(res);
+  }catch(e){ json = {ok:false, error:'Could not reach the server — check your connection and try again.'}; }
+
+  if(!json || !json.ok){
+    root.innerHTML = `
+      <div class="public-est-topbar"><img src="${LOGO_DATA_URI}" style="height:28px;" alt="Logo"></div>
+      <div class="crm-empty" style="max-width:520px; margin:60px auto;">${(json&&json.error)||'This estimate link is invalid or no longer available.'}</div>`;
+    return;
+  }
+
+  const {estimate, lineItems, billing, service, company} = json;
+  const docHtml = renderEstimateDocumentHtml(estimate, lineItems, billing, service, company, {status: estimate.status});
+  const canRespond = estimate.status === 'Sent' || estimate.status === 'Viewed';
+
+  root.innerHTML = `
+    <div class="public-est-topbar"><img src="${(company&&company.logoUrl)||LOGO_DATA_URI}" style="height:28px;" alt="Logo"> ${company&&company.name?company.name:''}</div>
+    ${docHtml}
+    ${canRespond ? `
+    <div class="public-est-actions">
+      <button class="btn" id="pubApproveBtn">✓ Approve Estimate</button>
+      <button class="btn ghost" id="pubRejectBtn">Reject Estimate</button>
+    </div>` : ''}
+    ${estimate.status === 'Approved' ? `<p class="public-est-note" style="color:var(--green); font-weight:600;">✓ Approved${estimate.approvedAt?' on '+fmtDate(String(estimate.approvedAt).slice(0,10)):''}${estimate.approvedByName?' by '+estimate.approvedByName:''}. Thank you!</p>` : ''}
+    ${estimate.status === 'Rejected' ? `<p class="public-est-note" style="color:var(--red);">This estimate was declined${estimate.rejectedAt?' on '+fmtDate(String(estimate.rejectedAt).slice(0,10)):''}. Contact us if you'd like to discuss.</p>` : ''}
+    ${estimate.status === 'Expired' ? `<p class="public-est-note" style="color:var(--red);">This estimate has expired. Please contact us for an updated quote.</p>` : ''}
+    ${estimate.status === 'Cancelled' ? `<p class="public-est-note">This estimate is no longer active.</p>` : ''}
+    <div id="pubActionForm"></div>`;
+
+  if(canRespond){
+    document.getElementById('pubApproveBtn').addEventListener('click', ()=>{
+      document.getElementById('pubActionForm').innerHTML = `
+        <div class="card" style="max-width:820px; margin:16px auto 0;">
+          <p style="margin-top:0;">Approving confirms you'd like us to proceed with this work as quoted, for a total of <strong>${pbMoney(estimate.total)}</strong>.</p>
+          <div class="field"><label>Your name</label><input id="pubApproverName" placeholder="Full name"></div>
+          <div class="row-actions"><button class="btn ghost" id="pubApproveCancel">Cancel</button><button class="btn" id="pubApproveSubmit">Confirm Approval</button></div>
+        </div>`;
+      document.getElementById('pubApproveCancel').addEventListener('click', ()=>{ document.getElementById('pubActionForm').innerHTML=''; });
+      document.getElementById('pubApproveSubmit').addEventListener('click', async ()=>{
+        const name = document.getElementById('pubApproverName').value.trim();
+        if(!name){ showToast('Please enter your name.', 'error'); return; }
+        const btn = document.getElementById('pubApproveSubmit'); setBusy(btn, 'Submitting…');
+        await submitEstimateResponse(id, 'approve', {approverName: name});
+      });
+    });
+    document.getElementById('pubRejectBtn').addEventListener('click', ()=>{
+      document.getElementById('pubActionForm').innerHTML = `
+        <div class="card" style="max-width:820px; margin:16px auto 0;">
+          <div class="field"><label>Reason (optional)</label><textarea id="pubRejectReason" rows="3"></textarea></div>
+          <div class="row-actions"><button class="btn ghost" id="pubRejectCancel">Cancel</button><button class="btn danger" id="pubRejectSubmit">Submit Rejection</button></div>
+        </div>`;
+      document.getElementById('pubRejectCancel').addEventListener('click', ()=>{ document.getElementById('pubActionForm').innerHTML=''; });
+      document.getElementById('pubRejectSubmit').addEventListener('click', async ()=>{
+        const reason = document.getElementById('pubRejectReason').value;
+        const btn = document.getElementById('pubRejectSubmit'); setBusy(btn, 'Submitting…');
+        await submitEstimateResponse(id, 'reject', {rejectionReason: reason});
+      });
+    });
+  }
+}
+
+async function submitEstimateResponse(id, response, extra){
+  try{
+    const res = await fetch(API_PROXY_PATH, {
+      method: 'POST', headers: {'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action:'publicEstimateRespond', data: Object.assign({id, response}, extra)})
+    });
+    const json = await parseApiResponse(res);
+    if(!json.ok){ showToast(json.error || 'Could not submit — try again.', 'error'); return; }
+    showToast(response === 'approve' ? 'Estimate approved — thank you!' : 'Response submitted.', 'success');
+    renderPublicEstimatePage(id);
+  }catch(e){ showToast('Network error — please try again.', 'error'); }
+}
+
 /* ============================= TICKETS TAB (flat list across all customers) ============================= */
 let ticketsRows = [];
 let ticketsFilter = {status:'', q:''};
@@ -3858,7 +4597,8 @@ function closeAdminUsers(){ document.getElementById('adminUsersModal').style.dis
 
 async function renderAdminUsersBody(){
   const body = document.getElementById('adminUsersBody');
-  const users = await apiList('Users');
+  const [users, companyRows] = await Promise.all([apiList('Users'), apiList('CompanySettings')]);
+  const co = companyRows[0] || {};
   users.sort((a,b)=> new Date(a.createdAt||0) - new Date(b.createdAt||0));
   body.innerHTML = `
     <div id="adminUsersList">
@@ -3872,10 +4612,22 @@ async function renderAdminUsersBody(){
     <div class="field"><label>Temporary password</label><input id="newUserPassword" type="text"></div>
     <div class="field"><label>Role</label><select id="newUserRole"><option value="user">User</option><option value="admin">Admin</option></select></div>
     <p class="login-error" id="newUserError" hidden></p>
-    <div class="row-actions">
+    <div class="row-actions" style="margin-bottom:6px;">
       <button class="btn ghost" id="adminUsersClose">Close</button>
       <button class="btn" id="newUserSave">Add user</button>
-    </div>`;
+    </div>
+
+    <h2 class="section-title">Company Info <span class="sub">— shown on estimate &amp; invoice documents</span></h2>
+    <div class="grid c2">
+      <div class="field"><label>Company Name</label><input id="coName" value="${(co.name||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>Phone</label><input id="coPhone" value="${(co.phone||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>Email</label><input id="coEmail" value="${(co.email||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>Website</label><input id="coWebsite" value="${(co.website||'').replace(/"/g,'&quot;')}"></div>
+    </div>
+    <div class="field"><label>Address</label><input id="coAddress" value="${(co.address||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field"><label>Default Terms &amp; Conditions</label><textarea id="coTerms" rows="3">${co.termsConditions||''}</textarea></div>
+    <p class="hint">Leave the logo as-is for now — it uses the app's existing logo until a custom one is added here.</p>
+    <div class="row-actions"><button class="btn ghost sm" id="btnSaveCompany">Save Company Info</button></div>`;
   document.getElementById('adminUsersClose').addEventListener('click', closeAdminUsers);
   document.getElementById('newUserSave').addEventListener('click', async ()=>{
     const email = document.getElementById('newUserEmail').value.trim();
@@ -3890,6 +4642,24 @@ async function renderAdminUsersBody(){
     if(!res.ok){ err.textContent = res.error || 'Could not add user.'; err.hidden = false; return; }
     await renderAdminUsersBody();
   });
+  document.getElementById('btnSaveCompany').addEventListener('click', async ()=>{
+    const btn = document.getElementById('btnSaveCompany'); setBusy(btn, 'Saving…');
+    const data = {
+      name: document.getElementById('coName').value,
+      phone: document.getElementById('coPhone').value,
+      email: document.getElementById('coEmail').value,
+      website: document.getElementById('coWebsite').value,
+      address: document.getElementById('coAddress').value,
+      termsConditions: document.getElementById('coTerms').value
+    };
+    const res = co.id
+      ? await apiWrite('update', 'CompanySettings', co.id, data)
+      : await apiWrite('create', 'CompanySettings', null, data);
+    btn.disabled = false; btn.textContent = 'Save Company Info';
+    if(!res.ok){ showToast('Save failed: ' + (res.error||''), 'error'); return; }
+    showToast('Company info saved.', 'success');
+    await renderAdminUsersBody();
+  });
 }
 document.getElementById('btnAdminUsers').addEventListener('click', openAdminUsers);
 
@@ -3901,12 +4671,21 @@ renderCodeLib();
 renderDevices();
 renderDiscrepancies();
 
-const storedSession = loadStoredSession();
-if(storedSession && storedSession.token && storedSession.user){
-  storeSession(storedSession.token, storedSession.user);
-  showApp();
+// A ?estimate=<id> link is the customer's own emailed estimate — a completely
+// separate, no-login page. Skip the normal login/app boot entirely for it.
+const publicEstimateId = new URLSearchParams(location.search).get('estimate');
+if(publicEstimateId){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('publicEstimatePage').style.display = 'block';
+  renderPublicEstimatePage(publicEstimateId);
 } else {
-  showLoginScreen();
+  const storedSession = loadStoredSession();
+  if(storedSession && storedSession.token && storedSession.user){
+    storeSession(storedSession.token, storedSession.user);
+    showApp();
+  } else {
+    showLoginScreen();
+  }
 }
 </script>
 </body>

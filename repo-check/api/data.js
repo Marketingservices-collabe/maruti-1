@@ -96,6 +96,13 @@ async function nextTicketNos(n){
   // tickets (multi-month/multi-year schedules) instead of n separate round trips.
   return rest('rpc/next_ticket_nos', {method: 'POST', body: JSON.stringify({n})});
 }
+async function nextEstimateNo(){
+  return rest('rpc/next_estimate_no', {method: 'POST', body: '{}'});
+}
+async function getCompanySettings_(){
+  const rows = await selectAll('CompanySettings');
+  return rows[0] || null;
+}
 
 async function getUserByEmail_(email, users){
   // Plain equality is case-sensitive and ilike treats "_" (common in real emails) as a
@@ -224,6 +231,80 @@ async function sendEmail_(data, session){
   return sendOk ? {ok:true} : {ok:false, error: errorMessage};
 }
 
+async function autoExpireEstimate_(est){
+  // Lazy expiry — there's no cron here, so a Sent/Viewed estimate past its expiration
+  // date is corrected to 'Expired' the moment anything actually reads it (the internal
+  // detail view, or the customer's own public link), rather than staying stale forever.
+  if(!est || !est.expirationDate) return est;
+  if(est.status !== 'Sent' && est.status !== 'Viewed') return est;
+  const today = new Date().toISOString().slice(0,10);
+  if(est.expirationDate >= today) return est;
+  const updated = await updateRow('Estimates', est.id, {status: 'Expired'});
+  if(updated){
+    try{ await insertRow('EstimateActivity', {estimateId: est.id, action: 'Expired', actorName: 'System'}); }catch(e){}
+    return updated;
+  }
+  return est;
+}
+
+async function getPublicEstimate_(id){
+  // No session required — this is the link a customer opens from their email.
+  // Deliberately hands back only what a customer should see: the estimate, its line
+  // items, the billing/service names, and the company profile for branding.
+  if(!id) return {ok:false, error:'Missing estimate id.'};
+  let est = await selectById('Estimates', id);
+  if(!est) return {ok:false, error:'Estimate not found.'};
+  est = await autoExpireEstimate_(est);
+
+  const [lineItems, billing, service, company] = await Promise.all([
+    rest(`EstimateLineItems?estimateId=eq.${encodeURIComponent(id)}&select=*&order=sortOrder.asc`),
+    est.billingId ? selectById('BillingLocations', est.billingId) : null,
+    est.serviceId ? selectById('ServiceLocations', est.serviceId) : null,
+    getCompanySettings_()
+  ]);
+
+  // First time the customer actually opens it: Sent -> Viewed.
+  if(est.status === 'Sent'){
+    const updated = await updateRow('Estimates', id, {status: 'Viewed', viewedAt: new Date().toISOString()});
+    if(updated){
+      try{ await insertRow('EstimateActivity', {estimateId: id, action: 'Viewed', actorName: 'Customer'}); }catch(e){}
+      est = updated;
+    }
+  }
+
+  return {ok:true, estimate: est, lineItems, billing, service, company};
+}
+
+async function respondToEstimate_(data){
+  // No session required — this is the customer clicking Approve/Reject on their own
+  // estimate link. Scoped tightly: it can only move THIS estimate from Sent/Viewed to
+  // Approved/Rejected, nothing else.
+  const id = data.id;
+  const response = data.response;
+  if(!id || (response !== 'approve' && response !== 'reject')){
+    return {ok:false, error:'Invalid request.'};
+  }
+  let est = await selectById('Estimates', id);
+  if(!est) return {ok:false, error:'Estimate not found.'};
+  est = await autoExpireEstimate_(est);
+  if(est.status !== 'Sent' && est.status !== 'Viewed'){
+    return {ok:false, error: est.status === 'Expired'
+      ? 'This estimate has expired — please contact us for an updated one.'
+      : `This estimate has already been ${String(est.status).toLowerCase()} and can't be changed.`};
+  }
+  const now = new Date().toISOString();
+  if(response === 'approve'){
+    const approverName = String(data.approverName || '').trim() || 'Customer';
+    await updateRow('Estimates', id, {status: 'Approved', approvedAt: now, approvedByName: approverName});
+    try{ await insertRow('EstimateActivity', {estimateId: id, action: 'Approved', actorName: approverName}); }catch(e){}
+  } else {
+    const reason = String(data.rejectionReason || '').trim();
+    await updateRow('Estimates', id, {status: 'Rejected', rejectedAt: now, rejectionReason: reason});
+    try{ await insertRow('EstimateActivity', {estimateId: id, action: 'Rejected', detail: reason, actorName: 'Customer'}); }catch(e){}
+  }
+  return {ok:true};
+}
+
 function jsonOut(res, obj){
   res.setHeader('Content-Type', 'application/json');
   res.status(200).send(JSON.stringify(obj));
@@ -232,7 +313,12 @@ function jsonOut(res, obj){
 export default async function handler(req, res){
   try{
     if(req.method === 'GET'){
-      const {action, sheet, id, billingId, serviceId, jobTicketId, q, token} = req.query;
+      const {action, sheet, id, billingId, serviceId, jobTicketId, estimateId, q, token} = req.query;
+
+      if(action === 'publicEstimate'){
+        // No session — the customer's own emailed link.
+        return jsonOut(res, await getPublicEstimate_(id));
+      }
 
       const runQuery = async () => {
         if(action === 'list'){
@@ -240,10 +326,12 @@ export default async function handler(req, res){
           if(billingId) rows = rows.filter(r => String(r.billingId) === String(billingId));
           if(serviceId) rows = rows.filter(r => String(r.serviceId) === String(serviceId));
           if(jobTicketId) rows = rows.filter(r => String(r.jobTicketId) === String(jobTicketId));
+          if(estimateId) rows = rows.filter(r => String(r.estimateId) === String(estimateId));
           return {ok:true, rows};
         }
         if(action === 'get'){
-          const row = await selectById(sheet, id);
+          let row = await selectById(sheet, id);
+          if(sheet === 'Estimates' && row) row = await autoExpireEstimate_(row);
           return {ok:true, row};
         }
         if(action === 'search'){
@@ -299,6 +387,11 @@ export default async function handler(req, res){
         return jsonOut(res, {ok:true, token: session.token, expiresAt: session.expiresAt, user:{id:user.id, email:user.email, role:user.role}});
       }
 
+      if(action === 'publicEstimateRespond'){
+        // No session — the customer clicking Approve/Reject on their own estimate link.
+        return jsonOut(res, await respondToEstimate_(body.data || {}));
+      }
+
       const session = await getSession_(body.token);
 
       if(action === 'logout'){
@@ -336,8 +429,12 @@ export default async function handler(req, res){
         if(sheet === 'Reports' && !data.savedAt){
           data.savedAt = new Date().toISOString();
         }
+        if(sheet === 'Estimates'){
+          if(!data.estimateNo) data.estimateNo = await nextEstimateNo();
+          if(!data.estimateDate) data.estimateDate = new Date().toISOString().slice(0,10);
+        }
         const row = await insertRow(sheet, data);
-        return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo});
+        return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo, estimateNo: row.estimateNo});
       }
       if(action === 'createMany'){
         // Used for recurring tickets (multi-month/multi-year schedules) — creates
