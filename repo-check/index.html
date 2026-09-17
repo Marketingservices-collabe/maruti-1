@@ -3167,8 +3167,8 @@ async function renderNewTicketBody(){
 async function renderDashboard(){
   const root = document.getElementById('dashboardRoot');
   root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
-  const [tickets, services, billings] = await Promise.all([
-    apiList('JobTickets'), apiList('ServiceLocations'), apiList('BillingLocations')
+  const [tickets, services, billings, priceBookItems] = await Promise.all([
+    apiList('JobTickets'), apiList('ServiceLocations'), apiList('BillingLocations'), apiList('PriceBookItems')
   ]);
   const svcById = {}; services.forEach(s=>svcById[s.id]=s);
   const billById = {}; billings.forEach(b=>billById[b.id]=b);
@@ -3192,6 +3192,7 @@ async function renderDashboard(){
     .sort((a,b)=> new Date(a.jobDate) - new Date(b.jobDate));
   const openCount = enriched.filter(isOpen).length;
   const thisMonthCount = enriched.filter(t => t.jobDate && t.jobDate.slice(0,7) === todayStr.slice(0,7)).length;
+  const lowStockItems = priceBookItems.filter(pbIsLowStock).sort((a,b)=> (a.stockQty||0) - (b.stockQty||0));
 
   const ticketRow = t => `
     <div class="report-row">
@@ -3204,18 +3205,29 @@ async function renderDashboard(){
       <div class="btns"><button class="btn ghost sm" data-open-ticket="${t.id}">Open</button></div>
     </div>`;
 
+  const stockRow = it => `
+    <div class="report-row">
+      <div>
+        <strong>${it.name}</strong>
+        <span class="badge-total" style="border-color:var(--red); color:var(--red);">Low stock</span>
+        <div class="meta">On hand: <strong style="color:var(--red);">${it.stockQty}</strong> · alert at ${it.lowStockThreshold} or fewer${it.sku?' · '+it.sku:''}</div>
+      </div>
+      <div class="btns"><button class="btn ghost sm" data-open-pb="${it.name.replace(/"/g,'&quot;')}">Open</button></div>
+    </div>`;
+
   root.innerHTML = `
     <div class="dash-stats">
       <div class="dash-stat"><div class="dash-stat-value">${billings.length}</div><div class="dash-stat-label">Customers</div></div>
       <div class="dash-stat"><div class="dash-stat-value">${services.length}</div><div class="dash-stat-label">Service locations</div></div>
       <div class="dash-stat"><div class="dash-stat-value">${openCount}</div><div class="dash-stat-label">Open tickets</div></div>
       <div class="dash-stat${overdue.length ? ' dash-stat-alert' : ''}"><div class="dash-stat-value">${overdue.length}</div><div class="dash-stat-label">Overdue</div></div>
+      <div class="dash-stat${lowStockItems.length ? ' dash-stat-alert' : ''}"><div class="dash-stat-value">${lowStockItems.length}</div><div class="dash-stat-label">Low stock items</div></div>
       <div class="dash-stat"><div class="dash-stat-value">${thisMonthCount}</div><div class="dash-stat-label">Due this month</div></div>
     </div>
     <div class="row-actions" style="margin:16px 0 24px;">
       <button class="btn" id="dashNewTicket">+ New ticket</button>
     </div>
-    <div class="grid c2" style="align-items:start;">
+    <div class="grid c3" style="align-items:start;">
       <div>
         <h2 class="section-title" style="margin-top:0;">Overdue <span class="sub">${overdue.length} ticket${overdue.length===1?'':'s'}</span></h2>
         ${overdue.length ? overdue.map(ticketRow).join('') : '<div class="crm-empty">Nothing overdue — you\'re all caught up.</div>'}
@@ -3224,11 +3236,23 @@ async function renderDashboard(){
         <h2 class="section-title" style="margin-top:0;">Next 7 days <span class="sub">${upcoming.length} ticket${upcoming.length===1?'':'s'}</span></h2>
         ${upcoming.length ? upcoming.map(ticketRow).join('') : '<div class="crm-empty">Nothing scheduled in the next week.</div>'}
       </div>
+      <div>
+        <h2 class="section-title" style="margin-top:0;">Low stock <span class="sub">${lowStockItems.length} item${lowStockItems.length===1?'':'s'}</span></h2>
+        ${lowStockItems.length ? lowStockItems.map(stockRow).join('') : '<div class="crm-empty">Everything tracked is well-stocked.</div>'}
+      </div>
     </div>`;
 
   document.getElementById('dashNewTicket').addEventListener('click', ()=> openNewTicketModal());
   root.querySelectorAll('[data-open-ticket]').forEach(btn=>{
     btn.addEventListener('click', ()=> openTicketDetailById(btn.dataset.openTicket));
+  });
+  root.querySelectorAll('[data-open-pb]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      // Reset the other filters too — the intent here is "show me this one item",
+      // not whatever category/type filter was left over from a previous visit.
+      priceBookFilter = {q: btn.dataset.openPb, category:'', itemType:'', showInactive:false};
+      document.querySelector('nav.tabs button[data-tab="pricebook"]').click();
+    });
   });
 }
 
@@ -3241,6 +3265,11 @@ let priceBookCategories = []; // PriceBookCategories rows: {kind:'category'|'typ
 let priceBookFilter = {q:'', category:'', itemType:'', showInactive:false};
 let pbEditor = null; // in-progress create/edit form state, or null when closed
 let pbCatPanelOpen = false;
+let pbUsageOpenId = null; // id of the row currently showing the "log usage" quick-entry, or null
+
+function pbIsLowStock(r){
+  return !!(r.trackInventory && r.stockQty!=null && r.lowStockThreshold!=null && r.stockQty <= r.lowStockThreshold);
+}
 
 function pbCategoryNames(){
   return priceBookCategories.filter(c=>c.kind==='category').sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(c=>c.name);
@@ -3356,14 +3385,18 @@ function renderPriceBookListOnly(){
   }
   rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
   const list = document.getElementById('pbList');
-  list.innerHTML = rows.length ? rows.map(r=>`
+  list.innerHTML = rows.length ? rows.map(r=>{
+    const low = pbIsLowStock(r);
+    return `
     <div class="report-row ${r.active===false?'pb-inactive-row':''}">
       <div>
         <strong>${r.name||'(unnamed)'}</strong>
         ${r.sku ? `<span class="ticket-no">${r.sku}</span>` : ''}
         ${r.active===false ? '<span class="badge-total" style="border-color:var(--slate-light); color:var(--slate-light);">Inactive</span>' : ''}
+        ${low ? '<span class="badge-total" style="border-color:var(--red); color:var(--red);">Low stock</span>' : ''}
         <div class="meta">${[r.category, r.subcategory, r.itemType].filter(Boolean).join(' · ') || 'Uncategorized'}${r.unit ? ' · per '+r.unit : ''}</div>
         ${r.description ? `<div class="meta" style="margin-top:2px;">${String(r.description).replace(/</g,'&lt;')}</div>` : ''}
+        ${r.trackInventory ? `<div class="meta" style="margin-top:2px;">On hand: <strong style="color:${low?'var(--red)':'var(--ink-2)'};">${r.stockQty!=null?r.stockQty:'—'}</strong>${r.lowStockThreshold!=null?' · alert at '+r.lowStockThreshold+' or fewer':''}</div>` : ''}
       </div>
       <div style="display:flex; align-items:center; gap:14px;">
         <div style="text-align:right;">
@@ -3371,15 +3404,52 @@ function renderPriceBookListOnly(){
           ${r.cost ? `<div class="pb-cost">cost ${pbMoney(r.cost)}</div>` : ''}
         </div>
         <div class="btns">
+          ${r.trackInventory ? `<button class="btn ghost sm" data-act="usagetoggle" data-id="${r.id}">Log usage</button>` : ''}
           <button class="btn ghost sm" data-act="edit" data-id="${r.id}">Edit</button>
           <button class="btn ghost sm" data-act="toggle" data-id="${r.id}">${r.active===false?'Reactivate':'Deactivate'}</button>
         </div>
       </div>
-    </div>`).join('') : '<div class="crm-empty">No items match — try a different search, or add one.</div>';
+    </div>
+    ${pbUsageOpenId===r.id ? `
+    <div class="row-actions" style="margin:-4px 0 10px;">
+      <input type="number" step="0.01" id="pbUsageQty_${r.id}" placeholder="Qty used" style="max-width:120px;">
+      <button class="btn sm" data-act="logusage" data-id="${r.id}">Record</button>
+      <button class="btn ghost sm" data-act="cancelusage" data-id="${r.id}">Cancel</button>
+    </div>` : ''}`;
+  }).join('') : '<div class="crm-empty">No items match — try a different search, or add one.</div>';
   list.querySelectorAll('[data-act="edit"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       pbEditor = Object.assign({}, priceBookRows.find(r=>r.id===btn.dataset.id));
       renderPbEditor();
+    });
+  });
+  list.querySelectorAll('[data-act="usagetoggle"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      pbUsageOpenId = (pbUsageOpenId === btn.dataset.id) ? null : btn.dataset.id;
+      renderPriceBookListOnly();
+    });
+  });
+  list.querySelectorAll('[data-act="cancelusage"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ pbUsageOpenId = null; renderPriceBookListOnly(); });
+  });
+  list.querySelectorAll('[data-act="logusage"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const row = priceBookRows.find(r=>r.id===btn.dataset.id);
+      const input = document.getElementById('pbUsageQty_'+row.id);
+      const used = parseFloat(input.value);
+      if(!used || used <= 0){ showToast('Enter how many were used.', 'error'); return; }
+      const next = Math.max(0, (row.stockQty!=null?row.stockQty:0) - used);
+      setBusy(btn, 'Saving…');
+      const res = await apiWrite('update', 'PriceBookItems', row.id, {stockQty: next});
+      if(!res.ok){ showToast('Could not update stock: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = 'Record'; return; }
+      row.stockQty = next;
+      pbUsageOpenId = null;
+      renderPriceBookListOnly();
+      if(row.lowStockThreshold!=null && next <= row.lowStockThreshold){
+        showToast(`${row.name}: only ${next} left — at or below your alert level of ${row.lowStockThreshold}.`, 'error');
+      } else {
+        showToast('Usage recorded.', 'success');
+      }
     });
   });
   list.querySelectorAll('[data-act="toggle"]').forEach(btn=>{
@@ -3428,6 +3498,11 @@ function renderPbEditor(){
         <div class="field" id="pbfTaxRateField" style="display:${st.taxable?'block':'none'};"><label>Tax Rate (%)</label><input type="number" step="0.01" id="pbfTaxRate" value="${st.taxRate!=null?st.taxRate:''}"></div>
         <div class="field" style="margin-bottom:10px;"><label class="checkbox-label"><input type="checkbox" id="pbfActive" ${st.active!==false?'checked':''}> Active</label></div>
       </div>
+      <div class="field"><label class="checkbox-label"><input type="checkbox" id="pbfTrackInv" ${st.trackInventory?'checked':''}> Track inventory &amp; low-stock alerts</label></div>
+      <div class="grid c3" id="pbfInvFields" style="display:${st.trackInventory?'grid':'none'};">
+        <div class="field"><label>Quantity on Hand</label><input type="number" step="0.01" id="pbfStockQty" value="${st.stockQty!=null?st.stockQty:''}"></div>
+        <div class="field" style="grid-column:span 2;"><label>Notify when remaining at or below</label><input type="number" step="0.01" id="pbfLowStock" value="${st.lowStockThreshold!=null?st.lowStockThreshold:''}"></div>
+      </div>
       <div class="field"><label>Internal Notes</label><input id="pbfNotes" value="${(st.notes||'').replace(/"/g,'&quot;')}"></div>
       <div class="row-actions">
         <button class="btn ghost" id="pbfCancel">Cancel</button>
@@ -3437,6 +3512,9 @@ function renderPbEditor(){
   document.getElementById('pbfCancel').addEventListener('click', closePbEditor);
   document.getElementById('pbfTaxable').addEventListener('change', e=>{
     document.getElementById('pbfTaxRateField').style.display = e.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('pbfTrackInv').addEventListener('change', e=>{
+    document.getElementById('pbfInvFields').style.display = e.target.checked ? 'grid' : 'none';
   });
   document.getElementById('pbfSave').addEventListener('click', async ()=>{
     const name = document.getElementById('pbfName').value.trim();
@@ -3457,6 +3535,9 @@ function renderPbEditor(){
       taxRate: numOrNull(document.getElementById('pbfTaxRate').value),
       defaultQty: numOrNull(document.getElementById('pbfDefaultQty').value) ?? 1,
       laborHours: numOrNull(document.getElementById('pbfLaborHours').value),
+      trackInventory: document.getElementById('pbfTrackInv').checked,
+      stockQty: numOrNull(document.getElementById('pbfStockQty').value),
+      lowStockThreshold: numOrNull(document.getElementById('pbfLowStock').value),
       active: document.getElementById('pbfActive').checked,
       notes: document.getElementById('pbfNotes').value
     };
