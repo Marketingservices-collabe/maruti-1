@@ -245,6 +245,15 @@
   .dash-stat-label{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--slate); margin-top:6px;}
   .dash-stat-alert .dash-stat-value{color:var(--red);}
 
+  /* ============================= Price Book ============================= */
+  .chip-row{display:flex; flex-wrap:wrap; gap:6px;}
+  .chip{display:inline-flex; align-items:center; gap:6px; background:#F4F2EC; border:1px solid var(--line); border-radius:4px; padding:4px 6px 4px 9px; font-size:12px; color:var(--ink-2);}
+  .chip button{background:none; border:none; color:var(--slate-light); cursor:pointer; font-size:13px; padding:0 2px; line-height:1;}
+  .chip button:hover{color:var(--red);}
+  .pb-price{font-family:var(--mono); font-weight:600; color:var(--ink); font-size:14px;}
+  .pb-cost{font-family:var(--mono); color:var(--slate-light); font-size:11.5px;}
+  .pb-inactive-row{opacity:.6;}
+
   /* ============================= RESPONSIVE: iPad / tablet ============================= */
   @media (max-width: 1024px){
     main{padding:20px 18px 70px;}
@@ -387,6 +396,7 @@
   <button data-tab="discrepancies">Discrepancies <span class="count" id="cntDiscrepancies">0</span></button>
   <button data-tab="preview">Report Preview</button>
   <button data-tab="reporttypes">Report Types</button>
+  <button data-tab="pricebook">Price Book</button>
 </nav>
 
 <main>
@@ -582,6 +592,12 @@
   <section class="tab" id="tab-reporttypes">
     <h2 class="section-title">Report Types <span class="sub">— define the fields and tables each kind of report captures (extinguisher, pump, etc.), once</span></h2>
     <div id="reportTypesRoot"></div>
+  </section>
+
+  <!-- ================= PRICE BOOK TAB ================= -->
+  <section class="tab" id="tab-pricebook">
+    <h2 class="section-title">Price Book <span class="sub">— billable services, inspections, repairs, labor, materials &amp; parts, priced once and reused on estimates and invoices</span></h2>
+    <div id="priceBookRoot"></div>
   </section>
 
 </main>
@@ -847,6 +863,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     if(btn.dataset.tab==='preview') refreshCurrentPreview();
     if(btn.dataset.tab==='customers') renderCustomers();
     if(btn.dataset.tab==='reporttypes') renderReportTypes();
+    if(btn.dataset.tab==='pricebook') renderPriceBook();
     if(btn.dataset.tab==='setup') renderSetupLinker();
     if(btn.dataset.tab==='tickets') renderTicketsTab();
     if(btn.dataset.tab==='scheduler') renderScheduler();
@@ -3095,6 +3112,244 @@ async function renderDashboard(){
   document.getElementById('dashNewTicket').addEventListener('click', ()=> openNewTicketModal());
   root.querySelectorAll('[data-open-ticket]').forEach(btn=>{
     btn.addEventListener('click', ()=> openTicketDetailById(btn.dataset.openTicket));
+  });
+}
+
+/* ============================= PRICE BOOK ============================= */
+// Billable services, inspections, repairs, labor, materials & parts — the shared catalog
+// that Estimates and Invoices will pull line items from. Categories/types are stored
+// (not hardcoded) so they stay configurable, per the fire-industry defaults seeded once.
+let priceBookRows = [];
+let priceBookCategories = []; // PriceBookCategories rows: {kind:'category'|'type', name, sortOrder}
+let priceBookFilter = {q:'', category:'', itemType:'', showInactive:false};
+let pbEditor = null; // in-progress create/edit form state, or null when closed
+let pbCatPanelOpen = false;
+
+function pbCategoryNames(){
+  return priceBookCategories.filter(c=>c.kind==='category').sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(c=>c.name);
+}
+function pbTypeNames(){
+  return priceBookCategories.filter(c=>c.kind==='type').sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(c=>c.name);
+}
+function pbMoney(n){
+  const v = parseFloat(n);
+  return isNaN(v) ? '—' : '$'+v.toFixed(2);
+}
+
+async function renderPriceBook(){
+  const root = document.getElementById('priceBookRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [items, cats] = await Promise.all([apiList('PriceBookItems'), apiList('PriceBookCategories')]);
+  priceBookRows = items;
+  priceBookCategories = cats;
+  root.innerHTML = `
+    <div class="ticket-filters">
+      <button class="btn sm" id="btnNewPbItem">+ New item</button>
+      <button class="btn ghost sm" id="btnManageCats">Manage categories &amp; types</button>
+      <div class="field" style="margin:0;"><label>Search</label><input id="pbSearch" placeholder="Name, SKU, description…" value="${priceBookFilter.q.replace(/"/g,'&quot;')}"></div>
+      <div class="field" style="margin:0;"><label>Category</label>
+        <select id="pbCategoryFilter"><option value="">All</option>${pbCategoryNames().map(c=>`<option value="${c}" ${priceBookFilter.category===c?'selected':''}>${c}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin:0;"><label>Type</label>
+        <select id="pbTypeFilter"><option value="">All</option>${pbTypeNames().map(t=>`<option value="${t}" ${priceBookFilter.itemType===t?'selected':''}>${t}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin:0;"><label class="checkbox-label" style="margin-top:9px;"><input type="checkbox" id="pbShowInactive" ${priceBookFilter.showInactive?'checked':''}> Show inactive</label></div>
+    </div>
+    <div id="pbCatPanelRoot"></div>
+    <div id="pbEditorRoot"></div>
+    <div id="pbList" style="margin-top:14px;"></div>`;
+  document.getElementById('btnNewPbItem').addEventListener('click', ()=>{
+    pbEditor = {id:null, name:'', sku:'', category:'', subcategory:'', description:'', itemType:'', unit:'each',
+      cost:'', price:'', taxable:false, taxRate:'', defaultQty:1, laborHours:'', active:true, notes:''};
+    renderPbEditor();
+  });
+  document.getElementById('btnManageCats').addEventListener('click', ()=>{
+    pbCatPanelOpen = !pbCatPanelOpen;
+    renderPbCatPanel();
+  });
+  document.getElementById('pbSearch').addEventListener('input', e=>{ priceBookFilter.q = e.target.value; renderPriceBookListOnly(); });
+  document.getElementById('pbCategoryFilter').addEventListener('change', e=>{ priceBookFilter.category = e.target.value; renderPriceBookListOnly(); });
+  document.getElementById('pbTypeFilter').addEventListener('change', e=>{ priceBookFilter.itemType = e.target.value; renderPriceBookListOnly(); });
+  document.getElementById('pbShowInactive').addEventListener('change', e=>{ priceBookFilter.showInactive = e.target.checked; renderPriceBookListOnly(); });
+  renderPbCatPanel();
+  renderPriceBookListOnly();
+}
+
+function renderPbCatPanel(){
+  const el = document.getElementById('pbCatPanelRoot');
+  if(!el) return;
+  if(!pbCatPanelOpen){ el.innerHTML = ''; return; }
+  const row = (kind, label) => `
+    <div class="field" style="margin:0;">
+      <label>${label}</label>
+      <div class="chip-row" style="margin-bottom:8px;">
+        ${priceBookCategories.filter(c=>c.kind===kind).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(c=>`
+          <span class="chip">${c.name}<button type="button" data-del-cat="${c.id}" title="Remove">✕</button></span>`).join('') || '<span class="hint">None yet.</span>'}
+      </div>
+      <div style="display:flex; gap:6px;">
+        <input id="pbNew${kind}" placeholder="Add ${label.toLowerCase().replace(/s$/,'')}…" style="flex:1;">
+        <button class="btn ghost sm" data-add-cat="${kind}">Add</button>
+      </div>
+    </div>`;
+  el.innerHTML = `<div class="card grid c2" style="margin-top:14px; margin-bottom:0;">
+      ${row('category','Categories')}
+      ${row('type','Item Types')}
+    </div>`;
+  el.querySelectorAll('[data-add-cat]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const kind = btn.dataset.addCat;
+      const input = document.getElementById('pbNew'+kind);
+      const name = input.value.trim();
+      if(!name) return;
+      if(priceBookCategories.some(c=>c.kind===kind && c.name.toLowerCase()===name.toLowerCase())){
+        showToast('That one already exists.', 'error'); return;
+      }
+      btn.disabled = true;
+      const maxOrder = Math.max(0, ...priceBookCategories.filter(c=>c.kind===kind).map(c=>c.sortOrder||0));
+      const res = await apiWrite('create', 'PriceBookCategories', null, {kind, name, sortOrder: maxOrder+1});
+      if(!res.ok){ showToast('Could not add: ' + (res.error||''), 'error'); btn.disabled = false; return; }
+      priceBookCategories = await apiList('PriceBookCategories');
+      renderPbCatPanel();
+      renderPriceBook(); // refresh filter dropdowns too
+    });
+  });
+  el.querySelectorAll('[data-del-cat]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!(await confirmDialog('Remove this category/type? Items already using it keep the text, they just won\'t offer it as a picker option anymore.', {confirmLabel:'Remove'}))) return;
+      const res = await apiWrite('delete', 'PriceBookCategories', btn.dataset.delCat, {});
+      if(!res.ok){ showToast('Could not remove: ' + (res.error||''), 'error'); return; }
+      priceBookCategories = await apiList('PriceBookCategories');
+      renderPbCatPanel();
+      renderPriceBook();
+    });
+  });
+}
+
+function renderPriceBookListOnly(){
+  let rows = priceBookRows.slice();
+  if(!priceBookFilter.showInactive) rows = rows.filter(r => r.active !== false);
+  if(priceBookFilter.category) rows = rows.filter(r => r.category === priceBookFilter.category);
+  if(priceBookFilter.itemType) rows = rows.filter(r => r.itemType === priceBookFilter.itemType);
+  if(priceBookFilter.q){
+    const q = priceBookFilter.q.toLowerCase();
+    rows = rows.filter(r =>
+      (r.name||'').toLowerCase().includes(q) ||
+      (r.sku||'').toLowerCase().includes(q) ||
+      (r.description||'').toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+  const list = document.getElementById('pbList');
+  list.innerHTML = rows.length ? rows.map(r=>`
+    <div class="report-row ${r.active===false?'pb-inactive-row':''}">
+      <div>
+        <strong>${r.name||'(unnamed)'}</strong>
+        ${r.sku ? `<span class="ticket-no">${r.sku}</span>` : ''}
+        ${r.active===false ? '<span class="badge-total" style="border-color:var(--slate-light); color:var(--slate-light);">Inactive</span>' : ''}
+        <div class="meta">${[r.category, r.subcategory, r.itemType].filter(Boolean).join(' · ') || 'Uncategorized'}${r.unit ? ' · per '+r.unit : ''}</div>
+        ${r.description ? `<div class="meta" style="margin-top:2px;">${String(r.description).replace(/</g,'&lt;')}</div>` : ''}
+      </div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div style="text-align:right;">
+          <div class="pb-price">${pbMoney(r.price)}</div>
+          ${r.cost ? `<div class="pb-cost">cost ${pbMoney(r.cost)}</div>` : ''}
+        </div>
+        <div class="btns">
+          <button class="btn ghost sm" data-act="edit" data-id="${r.id}">Edit</button>
+          <button class="btn ghost sm" data-act="toggle" data-id="${r.id}">${r.active===false?'Reactivate':'Deactivate'}</button>
+        </div>
+      </div>
+    </div>`).join('') : '<div class="crm-empty">No items match — try a different search, or add one.</div>';
+  list.querySelectorAll('[data-act="edit"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      pbEditor = Object.assign({}, priceBookRows.find(r=>r.id===btn.dataset.id));
+      renderPbEditor();
+    });
+  });
+  list.querySelectorAll('[data-act="toggle"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const row = priceBookRows.find(r=>r.id===btn.dataset.id);
+      const res = await apiWrite('update', 'PriceBookItems', row.id, {active: row.active===false});
+      if(!res.ok){ showToast('Could not update: ' + (res.error||''), 'error'); return; }
+      row.active = row.active===false; // reflect locally without a full reload
+      renderPriceBookListOnly();
+      showToast(row.active ? 'Item reactivated.' : 'Item deactivated.', 'success');
+    });
+  });
+}
+
+function closePbEditor(){ pbEditor = null; document.getElementById('pbEditorRoot').innerHTML = ''; }
+
+function renderPbEditor(){
+  const el = document.getElementById('pbEditorRoot');
+  const st = pbEditor;
+  const categoryOptions = pbCategoryNames();
+  const typeOptions = pbTypeNames();
+  el.innerHTML = `
+    <div class="card" style="margin-top:14px;">
+      <h2 class="section-title" style="margin-top:0;">${st.id ? 'Edit item' : 'New price book item'}</h2>
+      <div class="grid c3">
+        <div class="field"><label>Item Name</label><input id="pbfName" value="${(st.name||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Item Code / SKU</label><input id="pbfSku" value="${(st.sku||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Unit</label><input id="pbfUnit" placeholder="each, hour, sq ft…" value="${(st.unit||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Category</label>
+          <select id="pbfCategory"><option value="">— none —</option>${categoryOptions.map(c=>`<option value="${c}" ${st.category===c?'selected':''}>${c}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Subcategory</label><input id="pbfSubcategory" value="${(st.subcategory||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Item Type</label>
+          <select id="pbfType"><option value="">— none —</option>${typeOptions.map(t=>`<option value="${t}" ${st.itemType===t?'selected':''}>${t}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="field"><label>Description</label><input id="pbfDescription" value="${(st.description||'').replace(/"/g,'&quot;')}"></div>
+      <div class="grid c4">
+        <div class="field"><label>Cost</label><input type="number" step="0.01" id="pbfCost" value="${st.cost!=null?st.cost:''}"></div>
+        <div class="field"><label>Selling Price</label><input type="number" step="0.01" id="pbfPrice" value="${st.price!=null?st.price:''}"></div>
+        <div class="field"><label>Default Quantity</label><input type="number" step="0.01" id="pbfDefaultQty" value="${st.defaultQty!=null?st.defaultQty:1}"></div>
+        <div class="field"><label>Labor Hours</label><input type="number" step="0.01" id="pbfLaborHours" value="${st.laborHours!=null?st.laborHours:''}"></div>
+      </div>
+      <div class="grid c3" style="align-items:end;">
+        <div class="field" style="margin-bottom:10px;"><label class="checkbox-label"><input type="checkbox" id="pbfTaxable" ${st.taxable?'checked':''}> Taxable</label></div>
+        <div class="field" id="pbfTaxRateField" style="display:${st.taxable?'block':'none'};"><label>Tax Rate (%)</label><input type="number" step="0.01" id="pbfTaxRate" value="${st.taxRate!=null?st.taxRate:''}"></div>
+        <div class="field" style="margin-bottom:10px;"><label class="checkbox-label"><input type="checkbox" id="pbfActive" ${st.active!==false?'checked':''}> Active</label></div>
+      </div>
+      <div class="field"><label>Internal Notes</label><input id="pbfNotes" value="${(st.notes||'').replace(/"/g,'&quot;')}"></div>
+      <div class="row-actions">
+        <button class="btn ghost" id="pbfCancel">Cancel</button>
+        <button class="btn" id="pbfSave">${st.id ? 'Save changes' : 'Create item'}</button>
+      </div>
+    </div>`;
+  document.getElementById('pbfCancel').addEventListener('click', closePbEditor);
+  document.getElementById('pbfTaxable').addEventListener('change', e=>{
+    document.getElementById('pbfTaxRateField').style.display = e.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('pbfSave').addEventListener('click', async ()=>{
+    const name = document.getElementById('pbfName').value.trim();
+    if(!name){ showToast('Item name is required.', 'error'); return; }
+    const btn = document.getElementById('pbfSave'); setBusy(btn, 'Saving…');
+    const numOrNull = v => v === '' ? null : parseFloat(v);
+    const data = {
+      name,
+      sku: document.getElementById('pbfSku').value,
+      category: document.getElementById('pbfCategory').value,
+      subcategory: document.getElementById('pbfSubcategory').value,
+      itemType: document.getElementById('pbfType').value,
+      unit: document.getElementById('pbfUnit').value,
+      description: document.getElementById('pbfDescription').value,
+      cost: numOrNull(document.getElementById('pbfCost').value),
+      price: numOrNull(document.getElementById('pbfPrice').value),
+      taxable: document.getElementById('pbfTaxable').checked,
+      taxRate: numOrNull(document.getElementById('pbfTaxRate').value),
+      defaultQty: numOrNull(document.getElementById('pbfDefaultQty').value) ?? 1,
+      laborHours: numOrNull(document.getElementById('pbfLaborHours').value),
+      active: document.getElementById('pbfActive').checked,
+      notes: document.getElementById('pbfNotes').value
+    };
+    const res = st.id
+      ? await apiWrite('update', 'PriceBookItems', st.id, data)
+      : await apiWrite('create', 'PriceBookItems', null, data);
+    if(!res.ok){ showToast('Save failed: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = st.id ? 'Save changes' : 'Create item'; return; }
+    closePbEditor();
+    showToast(st.id ? 'Item updated.' : 'Item added.', 'success');
+    renderPriceBook();
   });
 }
 
