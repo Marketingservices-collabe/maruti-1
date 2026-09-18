@@ -96,6 +96,16 @@ async function nextTicketNos(n){
   // tickets (multi-month/multi-year schedules) instead of n separate round trips.
   return rest('rpc/next_ticket_nos', {method: 'POST', body: JSON.stringify({n})});
 }
+async function nextEstimateNo(){
+  return rest('rpc/next_estimate_no', {method: 'POST', body: '{}'});
+}
+async function nextInvoiceNo(){
+  return rest('rpc/next_invoice_no', {method: 'POST', body: '{}'});
+}
+async function getCompanySettings_(){
+  const rows = await selectAll('CompanySettings');
+  return rows[0] || null;
+}
 
 async function getUserByEmail_(email, users){
   // Plain equality is case-sensitive and ilike treats "_" (common in real emails) as a
@@ -150,6 +160,288 @@ async function uploadAttachment_(data){
   return {id: rec.id, url: fileUrl};
 }
 
+async function sendEmail_(data, session){
+  // Doc §4 — reusable email sending: general customer communication today, Estimates/
+  // Invoices later. Uses Resend (https://resend.com) as the provider — a Vercel-friendly
+  // REST API, no SDK needed. Required env vars:
+  //   RESEND_API_KEY  the account's API key (Resend dashboard → API Keys)
+  //   EMAIL_FROM      a verified sender, e.g. "Maruti <notifications@yourdomain.com>" —
+  //                   falls back to Resend's sandbox address, which only delivers to the
+  //                   account owner's own verified email (fine for testing, not for
+  //                   real customers) until a sending domain is verified.
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  const to = Array.isArray(data.to) ? data.to.filter(Boolean) : [];
+  const cc = Array.isArray(data.cc) ? data.cc.filter(Boolean) : [];
+  const bcc = Array.isArray(data.bcc) ? data.bcc.filter(Boolean) : [];
+  const subject = String(data.subject || '').trim();
+
+  if(!to.length) return {ok:false, error:'At least one recipient is required.'};
+  if(!subject) return {ok:false, error:'Subject is required.'};
+  if(!apiKey) return {ok:false, error:'Email sending is not configured yet — set RESEND_API_KEY (and ideally EMAIL_FROM) in the Vercel project.'};
+
+  // Attachments reference files already uploaded to Supabase Storage (e.g. a service
+  // location's existing Attachments) — fetch and inline each as base64. A single bad
+  // attachment link shouldn't sink the whole send, so skip it rather than throw.
+  let attachments;
+  if(Array.isArray(data.attachments) && data.attachments.length){
+    attachments = [];
+    for(const att of data.attachments){
+      try{
+        const fileRes = await fetch(att.url);
+        if(!fileRes.ok) continue;
+        const buf = Buffer.from(await fileRes.arrayBuffer());
+        attachments.push({filename: att.name || 'attachment', content: buf.toString('base64')});
+      }catch(e){ /* skip a broken attachment rather than failing the whole send */ }
+    }
+  }
+
+  const payload = {
+    from, to, subject,
+    html: data.html || '<p></p>',
+    ...(cc.length ? {cc} : {}),
+    ...(bcc.length ? {bcc} : {}),
+    ...(attachments && attachments.length ? {attachments} : {})
+  };
+
+  let sendOk = true, errorMessage = null;
+  try{
+    const sendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const sendBody = await sendRes.json().catch(()=> ({}));
+    if(!sendRes.ok){ sendOk = false; errorMessage = sendBody.message || `Email provider error (${sendRes.status})`; }
+  }catch(e){ sendOk = false; errorMessage = String(e && e.message || e); }
+
+  // Log regardless of outcome — a failed send should still show up in history, not
+  // vanish, so the office can see it needs a resend.
+  try{
+    await insertRow('EmailLog', {
+      billingId: data.billingId || null,
+      toEmails: to.join(', '),
+      ccEmails: cc.join(', '),
+      bccEmails: bcc.join(', '),
+      subject,
+      documentRef: data.documentRef || 'General communication',
+      sentBy: session.email,
+      status: sendOk ? 'sent' : 'failed',
+      errorMessage
+    });
+  }catch(e){ /* logging failure shouldn't mask the send result */ }
+
+  return sendOk ? {ok:true} : {ok:false, error: errorMessage};
+}
+
+async function autoExpireEstimate_(est){
+  // Lazy expiry — there's no cron here, so a Sent/Viewed estimate past its expiration
+  // date is corrected to 'Expired' the moment anything actually reads it (the internal
+  // detail view, or the customer's own public link), rather than staying stale forever.
+  if(!est || !est.expirationDate) return est;
+  if(est.status !== 'Sent' && est.status !== 'Viewed') return est;
+  const today = new Date().toISOString().slice(0,10);
+  if(est.expirationDate >= today) return est;
+  const updated = await updateRow('Estimates', est.id, {status: 'Expired'});
+  if(updated){
+    try{ await insertRow('EstimateActivity', {estimateId: est.id, action: 'Expired', actorName: 'System'}); }catch(e){}
+    return updated;
+  }
+  return est;
+}
+
+async function getPublicEstimate_(id){
+  // No session required — this is the link a customer opens from their email.
+  // Deliberately hands back only what a customer should see: the estimate, its line
+  // items, the billing/service names, and the company profile for branding.
+  if(!id) return {ok:false, error:'Missing estimate id.'};
+  let est = await selectById('Estimates', id);
+  if(!est) return {ok:false, error:'Estimate not found.'};
+  est = await autoExpireEstimate_(est);
+
+  const [lineItems, billing, service, company] = await Promise.all([
+    rest(`EstimateLineItems?estimateId=eq.${encodeURIComponent(id)}&select=*&order=sortOrder.asc`),
+    est.billingId ? selectById('BillingLocations', est.billingId) : null,
+    est.serviceId ? selectById('ServiceLocations', est.serviceId) : null,
+    getCompanySettings_()
+  ]);
+
+  // First time the customer actually opens it: Sent -> Viewed.
+  if(est.status === 'Sent'){
+    const updated = await updateRow('Estimates', id, {status: 'Viewed', viewedAt: new Date().toISOString()});
+    if(updated){
+      try{ await insertRow('EstimateActivity', {estimateId: id, action: 'Viewed', actorName: 'Customer'}); }catch(e){}
+      est = updated;
+    }
+  }
+
+  return {ok:true, estimate: est, lineItems, billing, service, company};
+}
+
+async function respondToEstimate_(data){
+  // No session required — this is the customer clicking Approve/Reject on their own
+  // estimate link. Scoped tightly: it can only move THIS estimate from Sent/Viewed to
+  // Approved/Rejected, nothing else.
+  const id = data.id;
+  const response = data.response;
+  if(!id || (response !== 'approve' && response !== 'reject')){
+    return {ok:false, error:'Invalid request.'};
+  }
+  let est = await selectById('Estimates', id);
+  if(!est) return {ok:false, error:'Estimate not found.'};
+  est = await autoExpireEstimate_(est);
+  if(est.status !== 'Sent' && est.status !== 'Viewed'){
+    return {ok:false, error: est.status === 'Expired'
+      ? 'This estimate has expired — please contact us for an updated one.'
+      : `This estimate has already been ${String(est.status).toLowerCase()} and can't be changed.`};
+  }
+  const now = new Date().toISOString();
+  if(response === 'approve'){
+    const approverName = String(data.approverName || '').trim() || 'Customer';
+    await updateRow('Estimates', id, {status: 'Approved', approvedAt: now, approvedByName: approverName});
+    try{ await insertRow('EstimateActivity', {estimateId: id, action: 'Approved', actorName: approverName}); }catch(e){}
+  } else {
+    const reason = String(data.rejectionReason || '').trim();
+    await updateRow('Estimates', id, {status: 'Rejected', rejectedAt: now, rejectionReason: reason});
+    try{ await insertRow('EstimateActivity', {estimateId: id, action: 'Rejected', detail: reason, actorName: 'Customer'}); }catch(e){}
+  }
+  return {ok:true};
+}
+
+async function recalcInvoiceTotals_(invoiceId){
+  // Single source of truth for amountPaid/balanceDue/status after any payment is
+  // recorded or removed — recomputed from the actual InvoicePayments rows rather than
+  // incrementally adjusted, so it can never drift out of sync.
+  const [inv, payments] = await Promise.all([
+    selectById('Invoices', invoiceId),
+    rest(`InvoicePayments?invoiceId=eq.${encodeURIComponent(invoiceId)}&select=amount`)
+  ]);
+  if(!inv) return null;
+  const amountPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const total = parseFloat(inv.total) || 0;
+  const balanceDue = Math.max(0, total - amountPaid);
+  let status = inv.status;
+  if(status !== 'Void'){
+    if(balanceDue <= 0.005 && total > 0) status = 'Paid';
+    else if(amountPaid > 0) status = 'Partially Paid';
+    else if(status === 'Paid' || status === 'Partially Paid') status = inv.sentAt ? 'Sent' : 'Draft';
+  }
+  const patch = {amountPaid, balanceDue, status};
+  if(status === 'Paid' && !inv.paidAt) patch.paidAt = new Date().toISOString();
+  if(status !== 'Paid') patch.paidAt = null;
+  return updateRow('Invoices', invoiceId, patch);
+}
+
+async function recordInvoicePayment_(data, session){
+  const invoiceId = data.invoiceId;
+  const amount = parseFloat(data.amount);
+  if(!invoiceId || !(amount > 0)) return {ok:false, error:'A valid invoice and payment amount are required.'};
+  const inv = await selectById('Invoices', invoiceId);
+  if(!inv) return {ok:false, error:'Invoice not found.'};
+  if(inv.status === 'Void') return {ok:false, error:'This invoice is void and cannot receive payments.'};
+  await insertRow('InvoicePayments', {
+    invoiceId, amount, method: data.method || 'other',
+    reference: data.reference || null, notes: data.notes || null,
+    receivedBy: session.email, paymentDate: data.paymentDate || new Date().toISOString().slice(0,10)
+  });
+  const updated = await recalcInvoiceTotals_(invoiceId);
+  try{
+    await insertRow('InvoiceActivity', {
+      invoiceId, action: 'Payment recorded',
+      detail: `${data.method || 'other'} · $${amount.toFixed(2)}${data.reference ? ' · Ref '+data.reference : ''}`,
+      actorName: session.email
+    });
+  }catch(e){}
+  return {ok:true, invoice: updated};
+}
+
+async function autoOverdueInvoice_(inv){
+  // Lazy status correction mirroring autoExpireEstimate_ — a Sent/Viewed/Partially Paid
+  // invoice past its due date with a balance still owed flips to Overdue the moment
+  // anything actually reads it, rather than needing a cron job.
+  if(!inv || !inv.dueDate) return inv;
+  if(!['Sent','Viewed','Partially Paid'].includes(inv.status)) return inv;
+  if((parseFloat(inv.balanceDue) || 0) <= 0) return inv;
+  const today = new Date().toISOString().slice(0,10);
+  if(inv.dueDate >= today) return inv;
+  const updated = await updateRow('Invoices', inv.id, {status: 'Overdue'});
+  if(updated){
+    try{ await insertRow('InvoiceActivity', {invoiceId: inv.id, action: 'Overdue', actorName: 'System'}); }catch(e){}
+    return updated;
+  }
+  return inv;
+}
+
+async function getPublicInvoice_(id){
+  // No session required — the link a customer opens from their invoice email. Read-only:
+  // payments are recorded by staff, there is no online payment collection here.
+  if(!id) return {ok:false, error:'Missing invoice id.'};
+  let inv = await selectById('Invoices', id);
+  if(!inv) return {ok:false, error:'Invoice not found.'};
+  inv = await autoOverdueInvoice_(inv);
+
+  const [lineItems, payments, billing, service, company] = await Promise.all([
+    rest(`InvoiceLineItems?invoiceId=eq.${encodeURIComponent(id)}&select=*&order=sortOrder.asc`),
+    rest(`InvoicePayments?invoiceId=eq.${encodeURIComponent(id)}&select=*&order=createdAt.asc`),
+    inv.billingId ? selectById('BillingLocations', inv.billingId) : null,
+    inv.serviceId ? selectById('ServiceLocations', inv.serviceId) : null,
+    getCompanySettings_()
+  ]);
+
+  if(inv.status === 'Sent'){
+    const updated = await updateRow('Invoices', id, {status: 'Viewed', viewedAt: new Date().toISOString()});
+    if(updated){
+      try{ await insertRow('InvoiceActivity', {invoiceId: id, action: 'Viewed', actorName: 'Customer'}); }catch(e){}
+      inv = updated;
+    }
+  }
+
+  return {ok:true, invoice: inv, lineItems, payments, billing, service, company};
+}
+
+async function convertEstimateToInvoice_(data, session){
+  // Doc §11/§12 bridge — turns an Approved estimate into a new Draft invoice, copying
+  // its line items exactly (never re-pricing from the Price Book) and marking the
+  // estimate as Converted so it can't be converted twice.
+  const estimateId = data.estimateId;
+  if(!estimateId) return {ok:false, error:'Missing estimate id.'};
+  const est = await selectById('Estimates', estimateId);
+  if(!est) return {ok:false, error:'Estimate not found.'};
+  if(est.convertedInvoiceId) return {ok:false, error:'This estimate has already been converted to an invoice.'};
+  if(est.status !== 'Approved') return {ok:false, error:'Only an Approved estimate can be converted to an invoice.'};
+
+  const lineItems = await rest(`EstimateLineItems?estimateId=eq.${encodeURIComponent(estimateId)}&select=*&order=sortOrder.asc`);
+  const today = new Date();
+  const dueDate = new Date(today.getTime() + 30*24*3600*1000); // net-30 default
+
+  const invoice = await insertRow('Invoices', {
+    invoiceNo: await nextInvoiceNo(),
+    billingId: est.billingId, serviceId: est.serviceId, jobTicketId: est.jobTicketId,
+    estimateId: est.id, status: 'Draft',
+    invoiceDate: today.toISOString().slice(0,10), dueDate: dueDate.toISOString().slice(0,10),
+    preparedBy: est.preparedBy, notes: est.notes, termsConditions: est.termsConditions,
+    discountType: est.discountType, discountValue: est.discountValue, taxRate: est.taxRate,
+    subtotal: est.subtotal, taxAmount: est.taxAmount, total: est.total,
+    amountPaid: 0, balanceDue: est.total
+  });
+
+  if(lineItems.length){
+    await insertRows('InvoiceLineItems', lineItems.map((li,i)=>({
+      invoiceId: invoice.id, priceBookItemId: li.priceBookItemId,
+      name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice,
+      discount: li.discount, taxable: li.taxable, sortOrder: i
+    })));
+  }
+
+  await updateRow('Estimates', est.id, {convertedInvoiceId: invoice.id, status: 'Converted'});
+  try{
+    await insertRow('EstimateActivity', {estimateId: est.id, action: 'Converted', detail: `Invoice ${invoice.invoiceNo}`, actorName: session.email});
+    await insertRow('InvoiceActivity', {invoiceId: invoice.id, action: 'Created', detail: `Converted from ${est.estimateNo}`, actorName: session.email});
+  }catch(e){}
+
+  return {ok:true, id: invoice.id, invoiceNo: invoice.invoiceNo};
+}
+
 function jsonOut(res, obj){
   res.setHeader('Content-Type', 'application/json');
   res.status(200).send(JSON.stringify(obj));
@@ -158,7 +450,15 @@ function jsonOut(res, obj){
 export default async function handler(req, res){
   try{
     if(req.method === 'GET'){
-      const {action, sheet, id, billingId, serviceId, jobTicketId, q, token} = req.query;
+      const {action, sheet, id, billingId, serviceId, jobTicketId, estimateId, invoiceId, q, token} = req.query;
+
+      if(action === 'publicEstimate'){
+        // No session — the customer's own emailed link.
+        return jsonOut(res, await getPublicEstimate_(id));
+      }
+      if(action === 'publicInvoice'){
+        return jsonOut(res, await getPublicInvoice_(id));
+      }
 
       const runQuery = async () => {
         if(action === 'list'){
@@ -166,10 +466,14 @@ export default async function handler(req, res){
           if(billingId) rows = rows.filter(r => String(r.billingId) === String(billingId));
           if(serviceId) rows = rows.filter(r => String(r.serviceId) === String(serviceId));
           if(jobTicketId) rows = rows.filter(r => String(r.jobTicketId) === String(jobTicketId));
+          if(estimateId) rows = rows.filter(r => String(r.estimateId) === String(estimateId));
+          if(invoiceId) rows = rows.filter(r => String(r.invoiceId) === String(invoiceId));
           return {ok:true, rows};
         }
         if(action === 'get'){
-          const row = await selectById(sheet, id);
+          let row = await selectById(sheet, id);
+          if(sheet === 'Estimates' && row) row = await autoExpireEstimate_(row);
+          if(sheet === 'Invoices' && row) row = await autoOverdueInvoice_(row);
           return {ok:true, row};
         }
         if(action === 'search'){
@@ -225,6 +529,11 @@ export default async function handler(req, res){
         return jsonOut(res, {ok:true, token: session.token, expiresAt: session.expiresAt, user:{id:user.id, email:user.email, role:user.role}});
       }
 
+      if(action === 'publicEstimateRespond'){
+        // No session — the customer clicking Approve/Reject on their own estimate link.
+        return jsonOut(res, await respondToEstimate_(body.data || {}));
+      }
+
       const session = await getSession_(body.token);
 
       if(action === 'logout'){
@@ -236,6 +545,18 @@ export default async function handler(req, res){
       if(action === 'uploadAttachment'){
         const result = await uploadAttachment_(body.data || {});
         return jsonOut(res, {ok:true, ...result});
+      }
+
+      if(action === 'sendEmail'){
+        const result = await sendEmail_(body.data || {}, session);
+        return jsonOut(res, result);
+      }
+
+      if(action === 'recordInvoicePayment'){
+        return jsonOut(res, await recordInvoicePayment_(body.data || {}, session));
+      }
+      if(action === 'convertEstimateToInvoice'){
+        return jsonOut(res, await convertEstimateToInvoice_(body.data || {}, session));
       }
 
       const sheet = body.sheet;
@@ -257,8 +578,16 @@ export default async function handler(req, res){
         if(sheet === 'Reports' && !data.savedAt){
           data.savedAt = new Date().toISOString();
         }
+        if(sheet === 'Estimates'){
+          if(!data.estimateNo) data.estimateNo = await nextEstimateNo();
+          if(!data.estimateDate) data.estimateDate = new Date().toISOString().slice(0,10);
+        }
+        if(sheet === 'Invoices'){
+          if(!data.invoiceNo) data.invoiceNo = await nextInvoiceNo();
+          if(!data.invoiceDate) data.invoiceDate = new Date().toISOString().slice(0,10);
+        }
         const row = await insertRow(sheet, data);
-        return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo});
+        return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo, estimateNo: row.estimateNo, invoiceNo: row.invoiceNo});
       }
       if(action === 'createMany'){
         // Used for recurring tickets (multi-month/multi-year schedules) — creates
