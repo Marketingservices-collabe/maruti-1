@@ -3041,6 +3041,9 @@ async function renderJobTicketDetail(root){
       <div><span class="k">Assigned To:</span>${ticket.assignedTo||'—'}</div>
       <div style="grid-column:span 2;"><span class="k">Details:</span>${ticket.description||'—'}</div>
     </div>
+    <div class="row-actions" style="margin-bottom:20px;">
+      <button class="btn ghost sm" id="btnCreateEstimateFromTicket">Create Estimate</button>
+    </div>
     <h4 style="margin-top:0;">Reports on this ticket</h4>
     <div style="margin-bottom:14px;"><button class="btn sm" id="btnAttachReport">+ Attach report</button></div>
     <div id="ticketReportsList">
@@ -3057,6 +3060,7 @@ async function renderJobTicketDetail(root){
   document.getElementById('bcBilling3').addEventListener('click', ()=>{ crm.view = 'billing-detail'; renderCustomers(); });
   document.getElementById('bcService3').addEventListener('click', ()=>{ crm.view = 'service-detail'; crm.serviceTab = 'jobtickets'; renderCustomers(); });
   document.getElementById('btnAttachReport').addEventListener('click', ()=> openAttachReportPicker(ticket, reportTypes));
+  document.getElementById('btnCreateEstimateFromTicket').addEventListener('click', ()=> createEstimateFromTicket(ticket));
   root.querySelectorAll('[data-act="open"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(btn.dataset.type === 'fire-alarm') await loadReportSnapshot(btn.dataset.id);
@@ -4011,7 +4015,7 @@ function renderEstimatesListOnly(){
 }
 
 /* ---- editor (create/edit a Draft) ---- */
-async function openEstimateEditor(existing){
+async function openEstimateEditor(existing, prefill){
   estimatesView = 'editor';
   const root = document.getElementById('estimatesRoot');
   root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
@@ -4036,7 +4040,13 @@ async function openEstimateEditor(existing){
       name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice,
       discount: li.discount, taxable: !!li.taxable}))
   } : {
-    id: null, estimateNo: null, billingId: null, serviceId: null, jobTicketId: null,
+    // A "Create Estimate" jump from an existing Job Ticket (doc §19) passes its
+    // billing/service/ticket ids here so the editor opens pre-linked — still just a
+    // starting point on the same blank-Draft form, nothing forced or skipped.
+    id: null, estimateNo: null,
+    billingId: (prefill && prefill.billingId) || null,
+    serviceId: (prefill && prefill.serviceId) || null,
+    jobTicketId: (prefill && prefill.jobTicketId) || null,
     estimateDate: new Date().toISOString().slice(0,10), expirationDate: '',
     preparedBy: currentUser ? currentUser.email : '',
     notes: '', termsConditions: (companyRows[0] && companyRows[0].termsConditions) || '',
@@ -4045,6 +4055,11 @@ async function openEstimateEditor(existing){
   estimateEditor._priceBookItems = priceBookItems.filter(p=>p.active!==false);
   estimateEditor._billings = billings;
   renderEstimateEditor();
+}
+
+async function createEstimateFromTicket(ticket){
+  activateTab('estimates', {render:false});
+  await openEstimateEditor(null, {billingId: crm.billingId, serviceId: ticket.serviceId, jobTicketId: ticket.id});
 }
 
 function renderEstimateEditor(){
