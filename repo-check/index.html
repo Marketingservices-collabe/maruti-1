@@ -1837,6 +1837,16 @@ async function apiUploadAttachment(serviceId, file){
 // subject/body.
 let emailComposerState = null;
 
+// Wraps an already-rendered document fragment (from renderEstimateDocumentHtml /
+// renderInvoiceDocumentHtml) with the page's own live <style> tag so the backend's
+// PDF renderer — a serverless function with no DOM of its own — sees the exact same
+// CSS the browser just used, instead of a hand-maintained copy that could drift.
+function buildStandaloneDocumentHtml(bodyHtml){
+  const styleTag = document.querySelector('style');
+  const css = styleTag ? styleTag.textContent : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body style="background:#fff; margin:0;">${bodyHtml}</body></html>`;
+}
+
 async function apiSendEmail(data){
   try{
     const res = await backendFetchPost({action:'sendEmail', token: authToken || '', data});
@@ -1863,6 +1873,7 @@ async function openEmailComposer(opts){
   emailComposerState = {
     billing, documentRef: opts.documentRef || 'General communication',
     placeholders: opts.placeholders || {}, attachments: opts.attachments || [],
+    pdfHtml: opts.pdfHtml || null, pdfFilename: opts.pdfFilename || null, attachPdf: !!opts.pdfHtml,
     custEmails, selectedTo: new Set(custEmails.filter(e=>e.isPrimary).map(e=>e.id)),
     subject: opts.defaultSubject || '', bodyText: opts.defaultBody || ''
   };
@@ -1901,12 +1912,15 @@ function renderEmailComposer(){
       </div>
     </div>` : ''}
     <div class="field"><label>Message</label><textarea id="ecBody" rows="9">${st.bodyText||''}</textarea></div>
-    ${st.attachments.length ? `
+    ${(st.attachments.length || st.pdfHtml) ? `
     <div class="field"><label>Attachments</label>
       <div class="chip-row">
         ${st.attachments.map((a,i)=>`<label class="checkbox-label" style="border:1px solid var(--line); border-radius:4px; padding:4px 9px; margin:0;">
           <input type="checkbox" data-att-idx="${i}" checked> ${a.name}
         </label>`).join('')}
+        ${st.pdfHtml ? `<label class="checkbox-label" style="border:1px solid var(--line); border-radius:4px; padding:4px 9px; margin:0;">
+          <input type="checkbox" id="ecAttachPdf" ${st.attachPdf?'checked':''}> ${st.pdfFilename||'document.pdf'} (PDF)
+        </label>` : ''}
       </div>
     </div>` : ''}`;
 
@@ -1951,17 +1965,21 @@ document.getElementById('ecSend').addEventListener('click', async ()=>{
     return cb ? cb.checked : true;
   });
 
+  const attachPdfCb = document.getElementById('ecAttachPdf');
+  const wantsPdf = st.pdfHtml && (!attachPdfCb || attachPdfCb.checked);
+
   const btn = document.getElementById('ecSend'); setBusy(btn, 'Sending…');
   const res = await apiSendEmail({
     to, cc, bcc, subject, html,
     billingId: st.billing ? st.billing.id : null,
     documentRef: st.documentRef,
-    attachments: selectedAttachments.map(a=>({url:a.url, name:a.name}))
+    attachments: selectedAttachments.map(a=>({url:a.url, name:a.name})),
+    ...(wantsPdf ? {pdfHtml: st.pdfHtml, pdfFilename: st.pdfFilename} : {})
   });
   if(!res.ok){ showToast('Could not send: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = 'Send'; return; }
   const sentBilling = st.billing;
   closeEmailComposer();
-  showToast('Email sent.', 'success');
+  showToast(res.pdfWarning ? 'Email sent — PDF attachment failed: ' + res.pdfWarning : 'Email sent.', res.pdfWarning ? 'info' : 'success');
   if(sentBilling) renderEmailHistory(sentBilling);
 });
 
@@ -4390,7 +4408,9 @@ async function sendEstimateFlow(e){
       DueDate: e.expirationDate ? fmtDate(e.expirationDate) : ''
     },
     defaultSubject: `Estimate ${e.estimateNo} from ${companyName}`,
-    defaultBody: bodyLines
+    defaultBody: bodyLines,
+    pdfHtml: buildStandaloneDocumentHtml(renderEstimateDocumentHtml(e, st.lineItems, st.billing, st.service, st.company, {status: e.status})),
+    pdfFilename: (e.estimateNo || 'estimate') + '.pdf'
   });
 }
 
@@ -5112,7 +5132,9 @@ async function sendInvoiceFlow(inv){
       BalanceDue: pbMoney(inv.balanceDue), DueDate: inv.dueDate ? fmtDate(inv.dueDate) : ''
     },
     defaultSubject: `Invoice ${inv.invoiceNo} from ${companyName}`,
-    defaultBody: bodyLines
+    defaultBody: bodyLines,
+    pdfHtml: buildStandaloneDocumentHtml(renderInvoiceDocumentHtml(inv, st.lineItems, st.payments, st.billing, st.service, st.company, {status: inv.status})),
+    pdfFilename: (inv.invoiceNo || 'invoice') + '.pdf'
   });
 }
 
