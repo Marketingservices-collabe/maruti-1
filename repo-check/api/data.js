@@ -99,6 +99,9 @@ async function nextTicketNos(n){
 async function nextEstimateNo(){
   return rest('rpc/next_estimate_no', {method: 'POST', body: '{}'});
 }
+async function nextInvoiceNo(){
+  return rest('rpc/next_invoice_no', {method: 'POST', body: '{}'});
+}
 async function getCompanySettings_(){
   const rows = await selectAll('CompanySettings');
   return rows[0] || null;
@@ -305,6 +308,140 @@ async function respondToEstimate_(data){
   return {ok:true};
 }
 
+async function recalcInvoiceTotals_(invoiceId){
+  // Single source of truth for amountPaid/balanceDue/status after any payment is
+  // recorded or removed — recomputed from the actual InvoicePayments rows rather than
+  // incrementally adjusted, so it can never drift out of sync.
+  const [inv, payments] = await Promise.all([
+    selectById('Invoices', invoiceId),
+    rest(`InvoicePayments?invoiceId=eq.${encodeURIComponent(invoiceId)}&select=amount`)
+  ]);
+  if(!inv) return null;
+  const amountPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const total = parseFloat(inv.total) || 0;
+  const balanceDue = Math.max(0, total - amountPaid);
+  let status = inv.status;
+  if(status !== 'Void'){
+    if(balanceDue <= 0.005 && total > 0) status = 'Paid';
+    else if(amountPaid > 0) status = 'Partially Paid';
+    else if(status === 'Paid' || status === 'Partially Paid') status = inv.sentAt ? 'Sent' : 'Draft';
+  }
+  const patch = {amountPaid, balanceDue, status};
+  if(status === 'Paid' && !inv.paidAt) patch.paidAt = new Date().toISOString();
+  if(status !== 'Paid') patch.paidAt = null;
+  return updateRow('Invoices', invoiceId, patch);
+}
+
+async function recordInvoicePayment_(data, session){
+  const invoiceId = data.invoiceId;
+  const amount = parseFloat(data.amount);
+  if(!invoiceId || !(amount > 0)) return {ok:false, error:'A valid invoice and payment amount are required.'};
+  const inv = await selectById('Invoices', invoiceId);
+  if(!inv) return {ok:false, error:'Invoice not found.'};
+  if(inv.status === 'Void') return {ok:false, error:'This invoice is void and cannot receive payments.'};
+  await insertRow('InvoicePayments', {
+    invoiceId, amount, method: data.method || 'other',
+    reference: data.reference || null, notes: data.notes || null,
+    receivedBy: session.email, paymentDate: data.paymentDate || new Date().toISOString().slice(0,10)
+  });
+  const updated = await recalcInvoiceTotals_(invoiceId);
+  try{
+    await insertRow('InvoiceActivity', {
+      invoiceId, action: 'Payment recorded',
+      detail: `${data.method || 'other'} · $${amount.toFixed(2)}${data.reference ? ' · Ref '+data.reference : ''}`,
+      actorName: session.email
+    });
+  }catch(e){}
+  return {ok:true, invoice: updated};
+}
+
+async function autoOverdueInvoice_(inv){
+  // Lazy status correction mirroring autoExpireEstimate_ — a Sent/Viewed/Partially Paid
+  // invoice past its due date with a balance still owed flips to Overdue the moment
+  // anything actually reads it, rather than needing a cron job.
+  if(!inv || !inv.dueDate) return inv;
+  if(!['Sent','Viewed','Partially Paid'].includes(inv.status)) return inv;
+  if((parseFloat(inv.balanceDue) || 0) <= 0) return inv;
+  const today = new Date().toISOString().slice(0,10);
+  if(inv.dueDate >= today) return inv;
+  const updated = await updateRow('Invoices', inv.id, {status: 'Overdue'});
+  if(updated){
+    try{ await insertRow('InvoiceActivity', {invoiceId: inv.id, action: 'Overdue', actorName: 'System'}); }catch(e){}
+    return updated;
+  }
+  return inv;
+}
+
+async function getPublicInvoice_(id){
+  // No session required — the link a customer opens from their invoice email. Read-only:
+  // payments are recorded by staff, there is no online payment collection here.
+  if(!id) return {ok:false, error:'Missing invoice id.'};
+  let inv = await selectById('Invoices', id);
+  if(!inv) return {ok:false, error:'Invoice not found.'};
+  inv = await autoOverdueInvoice_(inv);
+
+  const [lineItems, payments, billing, service, company] = await Promise.all([
+    rest(`InvoiceLineItems?invoiceId=eq.${encodeURIComponent(id)}&select=*&order=sortOrder.asc`),
+    rest(`InvoicePayments?invoiceId=eq.${encodeURIComponent(id)}&select=*&order=createdAt.asc`),
+    inv.billingId ? selectById('BillingLocations', inv.billingId) : null,
+    inv.serviceId ? selectById('ServiceLocations', inv.serviceId) : null,
+    getCompanySettings_()
+  ]);
+
+  if(inv.status === 'Sent'){
+    const updated = await updateRow('Invoices', id, {status: 'Viewed', viewedAt: new Date().toISOString()});
+    if(updated){
+      try{ await insertRow('InvoiceActivity', {invoiceId: id, action: 'Viewed', actorName: 'Customer'}); }catch(e){}
+      inv = updated;
+    }
+  }
+
+  return {ok:true, invoice: inv, lineItems, payments, billing, service, company};
+}
+
+async function convertEstimateToInvoice_(data, session){
+  // Doc §11/§12 bridge — turns an Approved estimate into a new Draft invoice, copying
+  // its line items exactly (never re-pricing from the Price Book) and marking the
+  // estimate as Converted so it can't be converted twice.
+  const estimateId = data.estimateId;
+  if(!estimateId) return {ok:false, error:'Missing estimate id.'};
+  const est = await selectById('Estimates', estimateId);
+  if(!est) return {ok:false, error:'Estimate not found.'};
+  if(est.convertedInvoiceId) return {ok:false, error:'This estimate has already been converted to an invoice.'};
+  if(est.status !== 'Approved') return {ok:false, error:'Only an Approved estimate can be converted to an invoice.'};
+
+  const lineItems = await rest(`EstimateLineItems?estimateId=eq.${encodeURIComponent(estimateId)}&select=*&order=sortOrder.asc`);
+  const today = new Date();
+  const dueDate = new Date(today.getTime() + 30*24*3600*1000); // net-30 default
+
+  const invoice = await insertRow('Invoices', {
+    invoiceNo: await nextInvoiceNo(),
+    billingId: est.billingId, serviceId: est.serviceId, jobTicketId: est.jobTicketId,
+    estimateId: est.id, status: 'Draft',
+    invoiceDate: today.toISOString().slice(0,10), dueDate: dueDate.toISOString().slice(0,10),
+    preparedBy: est.preparedBy, notes: est.notes, termsConditions: est.termsConditions,
+    discountType: est.discountType, discountValue: est.discountValue, taxRate: est.taxRate,
+    subtotal: est.subtotal, taxAmount: est.taxAmount, total: est.total,
+    amountPaid: 0, balanceDue: est.total
+  });
+
+  if(lineItems.length){
+    await insertRows('InvoiceLineItems', lineItems.map((li,i)=>({
+      invoiceId: invoice.id, priceBookItemId: li.priceBookItemId,
+      name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice,
+      discount: li.discount, taxable: li.taxable, sortOrder: i
+    })));
+  }
+
+  await updateRow('Estimates', est.id, {convertedInvoiceId: invoice.id, status: 'Converted'});
+  try{
+    await insertRow('EstimateActivity', {estimateId: est.id, action: 'Converted', detail: `Invoice ${invoice.invoiceNo}`, actorName: session.email});
+    await insertRow('InvoiceActivity', {invoiceId: invoice.id, action: 'Created', detail: `Converted from ${est.estimateNo}`, actorName: session.email});
+  }catch(e){}
+
+  return {ok:true, id: invoice.id, invoiceNo: invoice.invoiceNo};
+}
+
 function jsonOut(res, obj){
   res.setHeader('Content-Type', 'application/json');
   res.status(200).send(JSON.stringify(obj));
@@ -313,11 +450,14 @@ function jsonOut(res, obj){
 export default async function handler(req, res){
   try{
     if(req.method === 'GET'){
-      const {action, sheet, id, billingId, serviceId, jobTicketId, estimateId, q, token} = req.query;
+      const {action, sheet, id, billingId, serviceId, jobTicketId, estimateId, invoiceId, q, token} = req.query;
 
       if(action === 'publicEstimate'){
         // No session — the customer's own emailed link.
         return jsonOut(res, await getPublicEstimate_(id));
+      }
+      if(action === 'publicInvoice'){
+        return jsonOut(res, await getPublicInvoice_(id));
       }
 
       const runQuery = async () => {
@@ -327,11 +467,13 @@ export default async function handler(req, res){
           if(serviceId) rows = rows.filter(r => String(r.serviceId) === String(serviceId));
           if(jobTicketId) rows = rows.filter(r => String(r.jobTicketId) === String(jobTicketId));
           if(estimateId) rows = rows.filter(r => String(r.estimateId) === String(estimateId));
+          if(invoiceId) rows = rows.filter(r => String(r.invoiceId) === String(invoiceId));
           return {ok:true, rows};
         }
         if(action === 'get'){
           let row = await selectById(sheet, id);
           if(sheet === 'Estimates' && row) row = await autoExpireEstimate_(row);
+          if(sheet === 'Invoices' && row) row = await autoOverdueInvoice_(row);
           return {ok:true, row};
         }
         if(action === 'search'){
@@ -410,6 +552,13 @@ export default async function handler(req, res){
         return jsonOut(res, result);
       }
 
+      if(action === 'recordInvoicePayment'){
+        return jsonOut(res, await recordInvoicePayment_(body.data || {}, session));
+      }
+      if(action === 'convertEstimateToInvoice'){
+        return jsonOut(res, await convertEstimateToInvoice_(body.data || {}, session));
+      }
+
       const sheet = body.sheet;
       if(sheet === 'Users' && session.role !== 'admin'){
         return jsonOut(res, {ok:false, error:'Admin access required.'});
@@ -433,8 +582,12 @@ export default async function handler(req, res){
           if(!data.estimateNo) data.estimateNo = await nextEstimateNo();
           if(!data.estimateDate) data.estimateDate = new Date().toISOString().slice(0,10);
         }
+        if(sheet === 'Invoices'){
+          if(!data.invoiceNo) data.invoiceNo = await nextInvoiceNo();
+          if(!data.invoiceDate) data.invoiceDate = new Date().toISOString().slice(0,10);
+        }
         const row = await insertRow(sheet, data);
-        return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo, estimateNo: row.estimateNo});
+        return jsonOut(res, {ok:true, id: row.id, ticketNo: row.ticketNo, estimateNo: row.estimateNo, invoiceNo: row.invoiceNo});
       }
       if(action === 'createMany'){
         // Used for recurring tickets (multi-month/multi-year schedules) — creates

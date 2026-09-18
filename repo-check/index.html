@@ -284,6 +284,8 @@
   .est-doc-totals{margin-left:auto; width:280px; max-width:100%; margin-top:14px;}
   .est-doc-totals .row{display:flex; justify-content:space-between; font-size:13px; padding:5px 0; color:var(--slate);}
   .est-doc-totals .row.total{font-size:16px; font-weight:700; color:var(--ink); border-top:2px solid var(--ink); margin-top:6px; padding-top:10px;}
+  .est-doc-totals .row.balance{font-size:15px; font-weight:700; border-top:1px solid var(--line-strong); margin-top:4px; padding-top:8px;}
+  .est-doc-payments table.est-items{margin-top:8px;}
   .est-doc-notes{margin-top:28px; padding-top:16px; border-top:1px solid var(--line);}
   .est-doc-notes h4{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--slate); margin:0 0 6px;}
   .est-doc-notes p{font-size:12.5px; color:var(--slate); line-height:1.6; white-space:pre-wrap; margin:0 0 14px;}
@@ -406,6 +408,7 @@
 </div>
 
 <div id="publicEstimatePage" class="public-est-page" style="display:none;"></div>
+<div id="publicInvoicePage" class="public-est-page" style="display:none;"></div>
 
 <div id="loginScreen" class="login-screen">
   <div class="login-box">
@@ -445,6 +448,7 @@
   <button data-tab="scheduler">Scheduler</button>
   <button data-tab="customers">Customers</button>
   <button data-tab="estimates">Estimates</button>
+  <button data-tab="invoices">Invoices</button>
   <span class="tabs-divider" aria-hidden="true"></span>
   <button data-tab="setup">Building, Panel &amp; Certs</button>
   <button data-tab="devices">Devices <span class="count" id="cntDevices">0</span></button>
@@ -659,6 +663,12 @@
   <section class="tab" id="tab-estimates">
     <h2 class="section-title">Estimates <span class="sub">— quote the work, get customer approval, then it's ready to invoice</span></h2>
     <div id="estimatesRoot"></div>
+  </section>
+
+  <!-- ================= INVOICES TAB ================= -->
+  <section class="tab" id="tab-invoices">
+    <h2 class="section-title">Invoices <span class="sub">— bill the work, track payments, keep the balance current</span></h2>
+    <div id="invoicesRoot"></div>
   </section>
 
 </main>
@@ -923,24 +933,31 @@ function newDevice(){
 // hidden everywhere else instead of cluttering every tab's topbar.
 const BUILDER_TABS = ['setup','devices','discrepancies','preview'];
 const BUILDER_ACTION_IDS = ['btnSample','btnReset','btnPrint','btnExportPdf','btnSaveReport'];
+// Extracted so code can navigate to a tab programmatically (e.g. "View Invoice" from
+// an Estimate) without double-rendering: pass render:false to switch the visible
+// section only, then await your own render call right after instead of racing it.
+function activateTab(tab, opts){
+  opts = opts || {};
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));
+  document.querySelector(`nav.tabs button[data-tab="${tab}"]`).classList.add('active');
+  document.getElementById('tab-'+tab).classList.add('active');
+  const showBuilderActions = BUILDER_TABS.includes(tab);
+  BUILDER_ACTION_IDS.forEach(id=>{ document.getElementById(id).hidden = !showBuilderActions; });
+  if(opts.render === false) return;
+  if(tab==='dashboard') renderDashboard();
+  if(tab==='preview') refreshCurrentPreview();
+  if(tab==='customers') renderCustomers();
+  if(tab==='reporttypes') renderReportTypes();
+  if(tab==='pricebook') renderPriceBook();
+  if(tab==='estimates') renderEstimatesTab();
+  if(tab==='invoices') renderInvoicesTab();
+  if(tab==='setup') renderSetupLinker();
+  if(tab==='tickets') renderTicketsTab();
+  if(tab==='scheduler') renderScheduler();
+}
 document.querySelectorAll('nav.tabs button').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
-    const showBuilderActions = BUILDER_TABS.includes(btn.dataset.tab);
-    BUILDER_ACTION_IDS.forEach(id=>{ document.getElementById(id).hidden = !showBuilderActions; });
-    if(btn.dataset.tab==='dashboard') renderDashboard();
-    if(btn.dataset.tab==='preview') refreshCurrentPreview();
-    if(btn.dataset.tab==='customers') renderCustomers();
-    if(btn.dataset.tab==='reporttypes') renderReportTypes();
-    if(btn.dataset.tab==='pricebook') renderPriceBook();
-    if(btn.dataset.tab==='estimates') renderEstimatesTab();
-    if(btn.dataset.tab==='setup') renderSetupLinker();
-    if(btn.dataset.tab==='tickets') renderTicketsTab();
-    if(btn.dataset.tab==='scheduler') renderScheduler();
-  });
+  btn.addEventListener('click', ()=> activateTab(btn.dataset.tab));
 });
 
 /* ============================= SETUP BINDING ============================= */
@@ -1825,6 +1842,17 @@ async function apiSendEmail(data){
     const res = await backendFetchPost({action:'sendEmail', token: authToken || '', data});
     const result = await parseApiResponse(res);
     if(checkAuthFailure_(result)) return result;
+    return result;
+  }catch(e){ console.error(e); return {ok:false, error:String(e)}; }
+}
+// Generic wrapper for bespoke, non-CRUD backend actions (recordInvoicePayment,
+// convertEstimateToInvoice) — same shape as apiSendEmail, just parameterized on action.
+async function apiAction(action, data){
+  try{
+    const res = await backendFetchPost({action, token: authToken || '', data});
+    const result = await parseApiResponse(res);
+    if(checkAuthFailure_(result)) return result;
+    if(result && result.ok){ apiCacheInvalidateSheet('Invoices'); apiCacheInvalidateSheet('Estimates'); apiCacheInvalidateSheet('InvoicePayments'); apiCacheInvalidateSheet('InvoiceActivity'); apiCacheInvalidateSheet('EstimateActivity'); }
     return result;
   }catch(e){ console.error(e); return {ok:false, error:String(e)}; }
 }
@@ -4283,7 +4311,9 @@ function renderEstimateDetailView(){
       <button class="btn ghost sm" id="estExportPdfBtn">Export PDF</button>
       <button class="btn ghost sm" id="estCopyLinkBtn">Copy Customer Link</button>
       ${!['Cancelled','Converted'].includes(displayStatus) ? `<button class="btn ghost sm" id="estCancelBtn">Cancel Estimate</button>` : ''}
-      <button class="btn ghost sm" disabled title="Coming once the Invoices module is added">Convert to Invoice</button>
+      ${e.convertedInvoiceId
+        ? `<button class="btn ghost sm" id="estViewInvoiceBtn">View Invoice</button>`
+        : `<button class="btn ghost sm" id="estConvertBtn" ${displayStatus==='Approved'?'':'disabled'} title="${displayStatus==='Approved'?'':'The estimate must be Approved first'}">Convert to Invoice</button>`}
     </div>
     ${docHtml}
     <div class="card" style="margin-top:20px;">
@@ -4300,6 +4330,11 @@ function renderEstimateDetailView(){
   document.getElementById('estExportPdfBtn').addEventListener('click', exportEstimatePdf);
   document.getElementById('estCopyLinkBtn').addEventListener('click', ()=> copyEstimateLink(e.id));
   if(document.getElementById('estCancelBtn')) document.getElementById('estCancelBtn').addEventListener('click', cancelEstimate);
+  if(document.getElementById('estConvertBtn')) document.getElementById('estConvertBtn').addEventListener('click', convertEstimateToInvoiceFlow);
+  if(document.getElementById('estViewInvoiceBtn')) document.getElementById('estViewInvoiceBtn').addEventListener('click', ()=>{
+    activateTab('invoices', {render:false});
+    openInvoiceDetail(e.convertedInvoiceId);
+  });
 }
 
 async function copyEstimateLink(id){
@@ -4456,6 +4491,695 @@ async function submitEstimateResponse(id, response, extra){
     showToast(response === 'approve' ? 'Estimate approved — thank you!' : 'Response submitted.', 'success');
     renderPublicEstimatePage(id);
   }catch(e){ showToast('Network error — please try again.', 'error'); }
+}
+
+/* ============================= INVOICES (doc §12-16) ============================= */
+// Same shape as Estimates (list/editor/detail + a shared document template + a public
+// no-login customer page) with billing-specific additions: payment recording against
+// InvoicePayments, and automatic amountPaid/balanceDue/status recalculation on the
+// server (recalcInvoiceTotals_ in api/data.js) so the frontend never has to trust its
+// own arithmetic for money already collected. An invoice is either created directly
+// here or via "Convert to Invoice" on an Approved estimate (see convertEstimateToInvoiceFlow
+// below), which copies line items exactly rather than re-pricing them.
+const INVOICE_STATUSES = ['Draft','Sent','Viewed','Partially Paid','Paid','Overdue','Void'];
+function invoiceStatusColor(status){
+  if(status === 'Paid') return 'var(--green)';
+  if(status === 'Overdue' || status === 'Void') return 'var(--red)';
+  if(status === 'Sent' || status === 'Viewed' || status === 'Partially Paid') return 'var(--amber)';
+  return 'var(--slate)'; // Draft
+}
+function invoiceDisplayStatus(inv){
+  // Mirrors estimateDisplayStatus()'s lazy-overdue check for display purposes without a
+  // write — the stored status gets corrected for real the moment the invoice (or its
+  // public link) is actually opened.
+  const todayStr = new Date().toISOString().slice(0,10);
+  if(['Sent','Viewed','Partially Paid'].includes(inv.status) && inv.dueDate && inv.dueDate < todayStr && (parseFloat(inv.balanceDue)||0) > 0) return 'Overdue';
+  return inv.status || 'Draft';
+}
+function invoicePublicUrl(id){
+  return `${location.origin}${location.pathname}?invoice=${id}`;
+}
+
+/* ---- shared document template: used by the internal detail view, PDF export, and
+   the public (no-login) customer page. Reuses the .est-doc CSS built for Estimates —
+   same "professional quote/bill" layout, just headed INVOICE with payment info added. ---- */
+function renderInvoiceDocumentHtml(inv, lineItems, payments, billing, service, company, opts){
+  opts = opts || {};
+  const status = opts.status || inv.status;
+  const co = company || {};
+  const rows = lineItems.map(li=>{
+    const lineTotal = (parseFloat(li.quantity)||0)*(parseFloat(li.unitPrice)||0) - (parseFloat(li.discount)||0);
+    return `<tr>
+      <td>${li.name||''}${li.description?`<div class="item-desc">${String(li.description).replace(/</g,'&lt;')}</div>`:''}</td>
+      <td class="num">${li.quantity}</td>
+      <td class="num">${pbMoney(li.unitPrice)}</td>
+      <td class="num">${li.discount?pbMoney(li.discount):'—'}</td>
+      <td class="num">${pbMoney(lineTotal)}</td>
+    </tr>`;
+  }).join('');
+  const discountLabel = inv.discountType === 'percent' ? `${inv.discountValue||0}%` : pbMoney(inv.discountValue||0);
+  const discountAmt = inv.discountType === 'percent'
+    ? (parseFloat(inv.subtotal)||0) * (parseFloat(inv.discountValue)||0)/100
+    : Math.min(parseFloat(inv.discountValue)||0, parseFloat(inv.subtotal)||0);
+  const ribbonColor = invoiceStatusColor(status);
+  const amountPaid = parseFloat(inv.amountPaid)||0;
+  const balanceDue = parseFloat(inv.balanceDue)||0;
+  const paymentRows = (payments||[]).map(p=>`
+    <tr><td>${p.paymentDate?fmtDate(p.paymentDate):''}</td><td>${p.method||''}</td><td>${p.reference||'—'}</td><td class="num">${pbMoney(p.amount)}</td></tr>`).join('');
+  return `
+    <div class="est-doc" id="invDocRoot">
+      ${status && status !== 'Draft' ? `<span class="est-status-ribbon" style="background:${ribbonColor}22; color:${ribbonColor}; border:1px solid ${ribbonColor};">${status}</span>` : ''}
+      <div class="est-doc-head">
+        <div class="est-doc-brand">
+          <img src="${co.logoUrl || LOGO_DATA_URI}" alt="Company logo">
+          <div class="co-name">${co.name || 'Your Company'}</div>
+          <div class="co-line">${[co.address, co.phone, co.email, co.website].filter(Boolean).join(' · ')}</div>
+        </div>
+        <div class="est-doc-meta">
+          <h1>INVOICE</h1>
+          <div class="num">${inv.invoiceNo||''}</div>
+          <div class="kv"><b>Date:</b> ${inv.invoiceDate?fmtDate(inv.invoiceDate):'—'}</div>
+          <div class="kv"><b>Due:</b> ${inv.dueDate?fmtDate(inv.dueDate):'—'}</div>
+          ${inv.poNumber ? `<div class="kv"><b>PO #:</b> ${inv.poNumber}</div>` : ''}
+        </div>
+      </div>
+      <div class="est-doc-parties">
+        <div><h4>Customer</h4><div class="name">${billing?billing.name:'—'}</div>
+          ${billing&&billing.address?`<div class="line">${billing.address}</div>`:''}
+          ${billing&&billing.cityState?`<div class="line">${billing.cityState}</div>`:''}
+          ${billing&&billing.phone?`<div class="line">${billing.phone}</div>`:''}
+        </div>
+        <div><h4>Service Location</h4><div class="name">${service?service.name:'—'}</div>
+          ${service&&service.address?`<div class="line">${service.address}</div>`:''}
+          ${service&&service.cityState?`<div class="line">${service.cityState}</div>`:''}
+        </div>
+      </div>
+      <div class="est-doc-scroll">
+        <table class="est-items">
+          <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Discount</th><th class="num">Line Total</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" style="text-align:center; color:var(--slate-light);">No line items</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="est-doc-totals">
+        <div class="row">Subtotal<span>${pbMoney(inv.subtotal)}</span></div>
+        <div class="row">Discount${inv.discountValue?' ('+discountLabel+')':''}<span>-${pbMoney(discountAmt)}</span></div>
+        <div class="row">Tax${inv.taxRate?' ('+inv.taxRate+'%)':''}<span>${pbMoney(inv.taxAmount)}</span></div>
+        <div class="row total">Total<span>${pbMoney(inv.total)}</span></div>
+        ${amountPaid > 0 ? `<div class="row">Amount Paid<span>-${pbMoney(amountPaid)}</span></div>` : ''}
+        <div class="row balance" style="color:${balanceDue>0?'var(--red)':'var(--green)'};">Balance Due<span>${pbMoney(balanceDue)}</span></div>
+      </div>
+      ${payments && payments.length ? `
+      <div class="est-doc-notes est-doc-payments">
+        <h4>Payment History</h4>
+        <table class="est-items"><thead><tr><th>Date</th><th>Method</th><th>Reference</th><th class="num">Amount</th></tr></thead><tbody>${paymentRows}</tbody></table>
+      </div>` : ''}
+      ${inv.notes ? `<div class="est-doc-notes"><h4>Notes</h4><p>${String(inv.notes).replace(/</g,'&lt;')}</p></div>` : ''}
+      ${inv.termsConditions ? `<div class="est-doc-notes"><h4>Terms &amp; Conditions</h4><p>${String(inv.termsConditions).replace(/</g,'&lt;')}</p></div>` : ''}
+    </div>`;
+}
+
+function exportInvoicePdf(){
+  const el = document.getElementById('invDocRoot');
+  if(!el){ showToast('Nothing to export yet.', 'error'); return; }
+  const busy = document.getElementById('pdfBusy');
+  busy.style.display = 'flex';
+  const opt = {
+    margin: 0, filename: (invoiceDetailState.invoice.invoiceNo||'invoice')+'.pdf',
+    image: {type:'jpeg', quality:0.98}, html2canvas: {scale:2, useCORS:true},
+    jsPDF: {unit:'mm', format:'letter', orientation:'portrait'}
+  };
+  setTimeout(()=>{
+    try{
+      if(typeof html2pdf === 'undefined') throw new Error('html2pdf did not load');
+      html2pdf().set(opt).from(el).save().then(()=>{ busy.style.display='none'; })
+        .catch(()=>{ busy.style.display='none'; showToast('PDF export failed — try again.', 'error'); });
+    }catch(err){
+      busy.style.display = 'none';
+      showToast('PDF export failed to start.', 'error');
+    }
+  }, 150);
+}
+
+/* ---- tab state ---- */
+let invoicesView = 'list'; // 'list' | 'editor' | 'detail'
+let invoiceRows = [];
+let invoicesFilter = {status:'', q:''};
+let invoiceEditor = null;
+let invoiceDetailState = null;
+let invPbPickerOpen = false;
+let invPaymentFormOpen = false;
+let invLineIdSeq = 0;
+function newInvLineId(){ return 'ili' + (invLineIdSeq++); }
+
+async function renderInvoicesTab(){
+  if(invoicesView === 'editor') return renderInvoiceEditor();
+  if(invoicesView === 'detail') return renderInvoiceDetailView();
+  return renderInvoicesList();
+}
+
+/* ---- list ---- */
+async function renderInvoicesList(){
+  const root = document.getElementById('invoicesRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [invoices, billings, services] = await Promise.all([
+    apiList('Invoices'), apiList('BillingLocations'), apiList('ServiceLocations')
+  ]);
+  const billById = {}; billings.forEach(b=>billById[b.id]=b);
+  const svcById = {}; services.forEach(s=>svcById[s.id]=s);
+  invoiceRows = invoices.map(inv=> Object.assign({}, inv, {
+    _customer: billById[inv.billingId] ? billById[inv.billingId].name : 'Unknown customer',
+    _site: svcById[inv.serviceId] ? svcById[inv.serviceId].name : 'Unknown site',
+    _displayStatus: invoiceDisplayStatus(inv)
+  }));
+  root.innerHTML = `
+    <div class="ticket-filters">
+      <button class="btn sm" id="btnNewInvoice">+ New invoice</button>
+      <div class="field" style="margin:0;"><label>Search</label><input id="invSearch" placeholder="Invoice #, customer, site…" value="${invoicesFilter.q.replace(/"/g,'&quot;')}"></div>
+      <div class="field" style="margin:0;"><label>Status</label>
+        <select id="invStatusFilter"><option value="">All</option>${INVOICE_STATUSES.map(s=>`<option value="${s}" ${invoicesFilter.status===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div id="invoicesList"></div>`;
+  document.getElementById('btnNewInvoice').addEventListener('click', ()=> openInvoiceEditor(null));
+  document.getElementById('invSearch').addEventListener('input', e=>{ invoicesFilter.q = e.target.value; renderInvoicesListOnly(); });
+  document.getElementById('invStatusFilter').addEventListener('change', e=>{ invoicesFilter.status = e.target.value; renderInvoicesListOnly(); });
+  renderInvoicesListOnly();
+}
+
+function renderInvoicesListOnly(){
+  let rows = invoiceRows.slice();
+  if(invoicesFilter.status) rows = rows.filter(r => r._displayStatus === invoicesFilter.status);
+  if(invoicesFilter.q){
+    const q = invoicesFilter.q.toLowerCase();
+    rows = rows.filter(r => (r.invoiceNo||'').toLowerCase().includes(q) || r._customer.toLowerCase().includes(q) || r._site.toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+  const list = document.getElementById('invoicesList');
+  list.innerHTML = rows.length ? rows.map(r=>`
+    <div class="report-row">
+      <div>
+        <span class="ticket-no">${r.invoiceNo||''}</span>
+        <strong>${r._customer}</strong> <span class="hint" style="display:inline;">— ${r._site}</span>
+        <span class="badge-total" style="border-color:${invoiceStatusColor(r._displayStatus)}; color:${invoiceStatusColor(r._displayStatus)};">${r._displayStatus}</span>
+        <div class="meta">${r.invoiceDate?fmtDate(r.invoiceDate):''}${r.dueDate?' · due '+fmtDate(r.dueDate):''} · <span class="pb-price">${pbMoney(r.total)}</span>${(parseFloat(r.balanceDue)||0)>0 && r._displayStatus!=='Void' ? ' · balance '+pbMoney(r.balanceDue) : ''}</div>
+      </div>
+      <div class="btns"><button class="btn ghost sm" data-open="${r.id}">View</button></div>
+    </div>`).join('') : '<div class="crm-empty">No invoices match — try a different search, or create one.</div>';
+  list.querySelectorAll('[data-open]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openInvoiceDetail(btn.dataset.open));
+  });
+}
+
+/* ---- editor (create/edit a Draft) ---- */
+async function openInvoiceEditor(existing){
+  invoicesView = 'editor';
+  const root = document.getElementById('invoicesRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [billings, priceBookItems, companyRows] = await Promise.all([
+    apiList('BillingLocations'), apiList('PriceBookItems'), apiList('CompanySettings')
+  ]);
+  let lineItems = [];
+  if(existing){
+    lineItems = await apiList('InvoiceLineItems', {invoiceId: existing.id});
+    lineItems.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  }
+  const defaultDue = new Date(); defaultDue.setDate(defaultDue.getDate()+30);
+  invoiceEditor = existing ? {
+    id: existing.id, invoiceNo: existing.invoiceNo,
+    billingId: existing.billingId, serviceId: existing.serviceId, jobTicketId: existing.jobTicketId,
+    invoiceDate: existing.invoiceDate || new Date().toISOString().slice(0,10),
+    dueDate: existing.dueDate || defaultDue.toISOString().slice(0,10),
+    poNumber: existing.poNumber || '',
+    preparedBy: existing.preparedBy || (currentUser?currentUser.email:''),
+    notes: existing.notes || '', termsConditions: existing.termsConditions || '',
+    discountType: existing.discountType || 'percent', discountValue: existing.discountValue || 0,
+    taxRate: existing.taxRate || 0,
+    lineItems: lineItems.map(li=>({localId: newInvLineId(), id: li.id, priceBookItemId: li.priceBookItemId,
+      name: li.name, description: li.description, quantity: li.quantity, unitPrice: li.unitPrice,
+      discount: li.discount, taxable: !!li.taxable}))
+  } : {
+    id: null, invoiceNo: null, billingId: null, serviceId: null, jobTicketId: null,
+    invoiceDate: new Date().toISOString().slice(0,10), dueDate: defaultDue.toISOString().slice(0,10),
+    poNumber: '', preparedBy: currentUser ? currentUser.email : '',
+    notes: '', termsConditions: (companyRows[0] && companyRows[0].termsConditions) || '',
+    discountType: 'percent', discountValue: 0, taxRate: 0, lineItems: []
+  };
+  invoiceEditor._priceBookItems = priceBookItems.filter(p=>p.active!==false);
+  invoiceEditor._billings = billings;
+  renderInvoiceEditor();
+}
+
+function renderInvoiceEditor(){
+  const root = document.getElementById('invoicesRoot');
+  const st = invoiceEditor;
+  const totals = computeEstimateTotals(st.lineItems, st.discountType, st.discountValue, st.taxRate);
+  root.innerHTML = `
+    <div class="crm-breadcrumb"><a id="invBackToList">Invoices</a> / ${st.id ? 'Edit '+(st.invoiceNo||'') : 'New invoice'}</div>
+    <div class="card">
+      <h2 class="section-title" style="margin-top:0;">Customer &amp; Service Location</h2>
+      <div class="grid c3">
+        <div class="field"><label>Customer</label>
+          <select id="invBillingSelect"><option value="">— select —</option>${st._billings.map(b=>`<option value="${b.id}" ${st.billingId===b.id?'selected':''}>${b.name}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Service Location</label><select id="invServiceSelect"><option value="">— select customer first —</option></select></div>
+        <div class="field"><label>Job Ticket (optional)</label><select id="invTicketSelect"><option value="">— none —</option></select></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label>Invoice Date</label><input type="date" id="invDate" value="${st.invoiceDate}"></div>
+        <div class="field"><label>Due Date</label><input type="date" id="invDueDate" value="${st.dueDate}"></div>
+        <div class="field"><label>PO Number (optional)</label><input id="invPoNumber" value="${(st.poNumber||'').replace(/"/g,'&quot;')}"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title" style="margin-top:0;">Line Items</h2>
+      <div class="row-actions" style="margin-bottom:10px;">
+        <button class="btn ghost sm" id="invAddFromPb">+ Add from Price Book</button>
+        <button class="btn ghost sm" id="invAddCustom">+ Add custom line</button>
+      </div>
+      <div id="invPbPickerRoot"></div>
+      <div class="li-row-head"><div>Item</div><div>Qty</div><div>Unit Price</div><div>Discount</div><div>Tax</div><div></div></div>
+      <div id="invLineItemsRoot"></div>
+      <div class="est-doc-totals" style="margin-top:16px; width:100%; max-width:360px;">
+        <div class="row">Subtotal<span>${pbMoney(totals.subtotal)}</span></div>
+        <div class="row">Discount<span>-${pbMoney(totals.discountAmt)}</span></div>
+        <div class="row">Tax<span>${pbMoney(totals.taxAmt)}</span></div>
+        <div class="row total">Total<span>${pbMoney(totals.total)}</span></div>
+      </div>
+      <div class="grid c3" style="margin-top:14px;">
+        <div class="field"><label>Discount Type</label><select id="invDiscType"><option value="percent" ${st.discountType==='percent'?'selected':''}>%</option><option value="flat" ${st.discountType==='flat'?'selected':''}>$ flat</option></select></div>
+        <div class="field"><label>Discount Value</label><input type="number" step="0.01" id="invDiscValue" value="${st.discountValue}"></div>
+        <div class="field"><label>Tax Rate (%)</label><input type="number" step="0.01" id="invTaxRate" value="${st.taxRate}"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title" style="margin-top:0;">Notes &amp; Terms</h2>
+      <div class="field"><label>Notes (shown to customer)</label><textarea id="invNotes" rows="3">${st.notes||''}</textarea></div>
+      <div class="field"><label>Terms &amp; Conditions</label><textarea id="invTerms" rows="4">${st.termsConditions||''}</textarea></div>
+    </div>
+
+    <div class="row-actions">
+      <button class="btn ghost" id="invCancelEdit">Cancel</button>
+      <button class="btn" id="invSaveDraft">${st.id ? 'Save changes' : 'Save as Draft'}</button>
+    </div>`;
+
+  document.getElementById('invBackToList').addEventListener('click', ()=>{ invoicesView='list'; renderInvoicesTab(); });
+  document.getElementById('invCancelEdit').addEventListener('click', ()=>{ invoicesView='list'; renderInvoicesTab(); });
+  document.getElementById('invBillingSelect').addEventListener('change', e=>{
+    st.billingId = e.target.value; st.serviceId = null; st.jobTicketId = null;
+    populateInvServiceAndTicket();
+  });
+  document.getElementById('invDate').addEventListener('change', e=> st.invoiceDate = e.target.value);
+  document.getElementById('invDueDate').addEventListener('change', e=> st.dueDate = e.target.value);
+  document.getElementById('invPoNumber').addEventListener('input', e=> st.poNumber = e.target.value);
+  document.getElementById('invNotes').addEventListener('input', e=> st.notes = e.target.value);
+  document.getElementById('invTerms').addEventListener('input', e=> st.termsConditions = e.target.value);
+  document.getElementById('invDiscType').addEventListener('change', e=>{ st.discountType = e.target.value; renderInvoiceTotalsOnly(); });
+  document.getElementById('invDiscValue').addEventListener('input', e=>{ st.discountValue = e.target.value; renderInvoiceTotalsOnly(); });
+  document.getElementById('invTaxRate').addEventListener('input', e=>{ st.taxRate = e.target.value; renderInvoiceTotalsOnly(); });
+  document.getElementById('invAddFromPb').addEventListener('click', ()=>{ invPbPickerOpen = !invPbPickerOpen; renderInvPbPicker(); });
+  document.getElementById('invAddCustom').addEventListener('click', ()=>{
+    st.lineItems.push({localId: newInvLineId(), id:null, priceBookItemId:null, name:'', description:'', quantity:1, unitPrice:0, discount:0, taxable:false});
+    renderInvoiceLineItemsOnly();
+  });
+  document.getElementById('invSaveDraft').addEventListener('click', saveInvoiceDraft);
+
+  renderInvPbPicker();
+  renderInvoiceLineItemsOnly();
+  populateInvServiceAndTicket();
+}
+
+async function populateInvServiceAndTicket(){
+  const st = invoiceEditor;
+  const svcSel = document.getElementById('invServiceSelect');
+  if(!svcSel) return;
+  if(!st.billingId){ svcSel.innerHTML = '<option value="">— select customer first —</option>'; return; }
+  const services = await apiList('ServiceLocations', {billingId: st.billingId});
+  svcSel.innerHTML = '<option value="">— select —</option>' + services.map(s=>`<option value="${s.id}" ${st.serviceId===s.id?'selected':''}>${s.name}</option>`).join('');
+  svcSel.onchange = e=>{ st.serviceId = e.target.value; st.jobTicketId = null; populateInvTicketOnly(); };
+  await populateInvTicketOnly();
+}
+async function populateInvTicketOnly(){
+  const st = invoiceEditor;
+  const jtSel = document.getElementById('invTicketSelect');
+  if(!jtSel) return;
+  if(!st.serviceId){ jtSel.innerHTML = '<option value="">— none —</option>'; return; }
+  const tickets = await apiList('JobTickets', {serviceId: st.serviceId});
+  jtSel.innerHTML = '<option value="">— none —</option>' + tickets.map(t=>`<option value="${t.id}" ${st.jobTicketId===t.id?'selected':''}>${t.ticketNo||'Ticket'} — ${t.jobDate?fmtDate(t.jobDate):'no date'}</option>`).join('');
+  jtSel.onchange = e=>{ st.jobTicketId = e.target.value; };
+}
+
+function renderInvPbPicker(){
+  const el = document.getElementById('invPbPickerRoot');
+  if(!el) return;
+  if(!invPbPickerOpen){ el.innerHTML = ''; return; }
+  const st = invoiceEditor;
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:12px; padding:12px 14px;">
+      <div class="field" style="margin-bottom:8px;"><input id="invPbSearch" placeholder="Search price book…"></div>
+      <div id="invPbResults" style="max-height:220px; overflow-y:auto;"></div>
+    </div>`;
+  const renderResults = (q)=>{
+    const query = (q||'').toLowerCase();
+    const matches = st._priceBookItems.filter(p => !query || (p.name||'').toLowerCase().includes(query) || (p.sku||'').toLowerCase().includes(query)).slice(0,30);
+    document.getElementById('invPbResults').innerHTML = matches.length ? matches.map(p=>`
+      <div class="crm-item" data-pick="${p.id}"><div class="name">${p.name}</div><div class="sub">${p.category||''} · ${pbMoney(p.price)}${p.sku?' · '+p.sku:''}</div></div>
+    `).join('') : '<div class="crm-empty">No matches.</div>';
+    document.querySelectorAll('#invPbResults [data-pick]').forEach(el2=>{
+      el2.addEventListener('click', ()=>{
+        const item = st._priceBookItems.find(p=>p.id===el2.dataset.pick);
+        st.lineItems.push({
+          localId: newInvLineId(), id:null, priceBookItemId: item.id,
+          name: item.name, description: item.description || '',
+          quantity: item.defaultQty || 1, unitPrice: item.price || 0, discount: 0, taxable: !!item.taxable
+        });
+        invPbPickerOpen = false;
+        renderInvPbPicker();
+        renderInvoiceLineItemsOnly();
+      });
+    });
+  };
+  renderResults('');
+  document.getElementById('invPbSearch').addEventListener('input', e=> renderResults(e.target.value));
+}
+
+function renderInvoiceLineItemsOnly(){
+  const st = invoiceEditor;
+  const root = document.getElementById('invLineItemsRoot');
+  if(!root) return;
+  root.innerHTML = st.lineItems.length ? st.lineItems.map(li=>`
+    <div class="li-row" data-local="${li.localId}">
+      <div>
+        <input type="text" data-f="name" placeholder="Item name" value="${(li.name||'').replace(/"/g,'&quot;')}">
+        <input type="text" data-f="description" placeholder="Description (optional)" value="${(li.description||'').replace(/"/g,'&quot;')}" style="margin-top:4px;">
+      </div>
+      <input type="number" step="0.01" data-f="quantity" value="${li.quantity}">
+      <input type="number" step="0.01" data-f="unitPrice" value="${li.unitPrice}">
+      <input type="number" step="0.01" data-f="discount" value="${li.discount||0}" title="Line discount ($)">
+      <label class="checkbox-label" style="margin:0; justify-content:center;"><input type="checkbox" data-f="taxable" ${li.taxable?'checked':''}></label>
+      <button class="del-btn" data-del="${li.localId}" title="Remove">✕</button>
+    </div>`).join('') : '<div class="crm-empty" style="padding:16px;">No line items yet — add one from the Price Book or a custom line.</div>';
+
+  root.querySelectorAll('.li-row').forEach(rowEl=>{
+    const li = st.lineItems.find(x=>x.localId===rowEl.dataset.local);
+    rowEl.querySelectorAll('[data-f]').forEach(inp=>{
+      const field = inp.dataset.f;
+      inp.addEventListener(inp.type==='checkbox' ? 'change' : 'input', ()=>{
+        li[field] = inp.type==='checkbox' ? inp.checked : inp.value;
+        renderInvoiceTotalsOnly();
+      });
+    });
+  });
+  root.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      st.lineItems = st.lineItems.filter(x=>x.localId !== btn.dataset.del);
+      renderInvoiceLineItemsOnly();
+    });
+  });
+  renderInvoiceTotalsOnly();
+}
+
+function renderInvoiceTotalsOnly(){
+  const st = invoiceEditor;
+  const box = document.querySelector('#invoicesRoot .est-doc-totals');
+  if(!box) return;
+  const totals = computeEstimateTotals(st.lineItems, st.discountType, st.discountValue, st.taxRate);
+  const rows = box.querySelectorAll('.row');
+  if(rows[0]) rows[0].innerHTML = `Subtotal<span>${pbMoney(totals.subtotal)}</span>`;
+  if(rows[1]) rows[1].innerHTML = `Discount<span>-${pbMoney(totals.discountAmt)}</span>`;
+  if(rows[2]) rows[2].innerHTML = `Tax<span>${pbMoney(totals.taxAmt)}</span>`;
+  if(rows[3]) rows[3].innerHTML = `Total<span>${pbMoney(totals.total)}</span>`;
+}
+
+async function saveInvoiceDraft(){
+  const st = invoiceEditor;
+  if(!st.billingId || !st.serviceId){ showToast('Pick a customer and service location.', 'error'); return; }
+  if(!st.lineItems.length){ showToast('Add at least one line item.', 'error'); return; }
+  const btn = document.getElementById('invSaveDraft'); setBusy(btn, 'Saving…');
+  const totals = computeEstimateTotals(st.lineItems, st.discountType, st.discountValue, st.taxRate);
+  const payload = {
+    billingId: st.billingId, serviceId: st.serviceId, jobTicketId: st.jobTicketId || null,
+    invoiceDate: st.invoiceDate, dueDate: st.dueDate || null, poNumber: st.poNumber || null,
+    preparedBy: st.preparedBy, notes: st.notes, termsConditions: st.termsConditions,
+    discountType: st.discountType, discountValue: parseFloat(st.discountValue)||0,
+    taxRate: parseFloat(st.taxRate)||0,
+    subtotal: totals.subtotal, taxAmount: totals.taxAmt, total: totals.total,
+    balanceDue: totals.total
+  };
+  let invoiceId = st.id;
+  const res = st.id
+    ? await apiWrite('update', 'Invoices', st.id, payload)
+    : await apiWrite('create', 'Invoices', null, payload);
+  if(!res.ok){ showToast('Save failed: ' + (res.error||''), 'error'); btn.disabled = false; btn.textContent = st.id ? 'Save changes' : 'Save as Draft'; return; }
+  if(!st.id) invoiceId = res.id;
+
+  const oldItems = st.id ? await apiList('InvoiceLineItems', {invoiceId}) : [];
+  for(const old of oldItems){ await apiWrite('delete', 'InvoiceLineItems', old.id, {}); }
+  const dataList = st.lineItems.map((li,i)=>({
+    invoiceId, priceBookItemId: li.priceBookItemId || null,
+    name: li.name, description: li.description,
+    quantity: parseFloat(li.quantity)||0, unitPrice: parseFloat(li.unitPrice)||0,
+    discount: parseFloat(li.discount)||0, taxable: !!li.taxable, sortOrder: i
+  }));
+  if(dataList.length) await apiWriteMany('InvoiceLineItems', dataList);
+
+  await apiWrite('create', 'InvoiceActivity', null, {
+    invoiceId, action: st.id ? 'Edited' : 'Created', actorName: currentUser ? currentUser.email : ''
+  });
+
+  showToast(st.id ? 'Invoice updated.' : 'Invoice created.', 'success');
+  await openInvoiceDetail(invoiceId);
+}
+
+/* ---- detail / document view ---- */
+async function openInvoiceDetail(id){
+  invoicesView = 'detail';
+  invPaymentFormOpen = false;
+  const root = document.getElementById('invoicesRoot');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  const [invoice, lineItems, payments, activity, companyRows] = await Promise.all([
+    apiGet('Invoices', id),
+    apiList('InvoiceLineItems', {invoiceId: id}),
+    apiList('InvoicePayments', {invoiceId: id}),
+    apiList('InvoiceActivity', {invoiceId: id}),
+    apiList('CompanySettings')
+  ]);
+  if(!invoice){ showToast('Invoice not found.', 'error'); invoicesView = 'list'; return renderInvoicesTab(); }
+  const [billing, service] = await Promise.all([
+    invoice.billingId ? apiGet('BillingLocations', invoice.billingId) : null,
+    invoice.serviceId ? apiGet('ServiceLocations', invoice.serviceId) : null
+  ]);
+  lineItems.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  payments.sort((a,b)=> new Date(a.createdAt||0) - new Date(b.createdAt||0));
+  activity.sort((a,b)=> new Date(b.createdAt||0) - new Date(a.createdAt||0));
+  invoiceDetailState = {invoice, lineItems, payments, billing, service, activity, company: companyRows[0] || null};
+  renderInvoiceDetailView();
+}
+
+function renderInvoiceDetailView(){
+  const root = document.getElementById('invoicesRoot');
+  const st = invoiceDetailState;
+  const inv = st.invoice;
+  const displayStatus = invoiceDisplayStatus(inv);
+  const docHtml = renderInvoiceDocumentHtml(inv, st.lineItems, st.payments, st.billing, st.service, st.company, {status: displayStatus});
+  const canRecordPayment = !['Void','Paid'].includes(displayStatus);
+  const canVoid = !['Void','Paid'].includes(displayStatus);
+
+  root.innerHTML = `
+    <div class="crm-breadcrumb"><a id="invBackToList2">Invoices</a> / ${inv.invoiceNo}</div>
+    <div class="row-actions" style="margin-bottom:14px; flex-wrap:wrap;">
+      ${displayStatus === 'Draft' ? `<button class="btn ghost sm" id="invEditBtn">Edit</button>` : ''}
+      <button class="btn sm" id="invSendBtn">${inv.sentAt ? 'Resend' : 'Send'} Invoice</button>
+      ${canRecordPayment ? `<button class="btn sm" id="invRecordPaymentBtn">Record Payment</button>` : ''}
+      <button class="btn ghost sm" id="invDuplicateBtn">Duplicate</button>
+      <button class="btn ghost sm" id="invExportPdfBtn">Export PDF</button>
+      <button class="btn ghost sm" id="invCopyLinkBtn">Copy Customer Link</button>
+      ${canVoid ? `<button class="btn ghost sm" id="invVoidBtn">Void Invoice</button>` : ''}
+    </div>
+    <div id="invPaymentFormRoot"></div>
+    ${docHtml}
+    <div class="card" style="margin-top:20px;">
+      <h2 class="section-title" style="margin-top:0;">Activity</h2>
+      ${st.activity.length ? st.activity.map(a=>`
+        <div class="crm-note"><div class="meta">${a.createdAt?fmtDate(String(a.createdAt).slice(0,10)):''} · ${a.actorName||''}</div><div>${a.action}${a.detail?': '+String(a.detail).replace(/</g,'&lt;'):''}</div></div>
+      `).join('') : '<div class="crm-empty">No activity yet.</div>'}
+    </div>`;
+
+  document.getElementById('invBackToList2').addEventListener('click', ()=>{ invoicesView='list'; renderInvoicesTab(); });
+  if(document.getElementById('invEditBtn')) document.getElementById('invEditBtn').addEventListener('click', ()=> openInvoiceEditor(inv));
+  document.getElementById('invSendBtn').addEventListener('click', ()=> sendInvoiceFlow(inv));
+  if(document.getElementById('invRecordPaymentBtn')) document.getElementById('invRecordPaymentBtn').addEventListener('click', ()=>{ invPaymentFormOpen = !invPaymentFormOpen; renderInvPaymentForm(); });
+  document.getElementById('invDuplicateBtn').addEventListener('click', duplicateInvoice);
+  document.getElementById('invExportPdfBtn').addEventListener('click', exportInvoicePdf);
+  document.getElementById('invCopyLinkBtn').addEventListener('click', ()=> copyInvoiceLink(inv.id));
+  if(document.getElementById('invVoidBtn')) document.getElementById('invVoidBtn').addEventListener('click', voidInvoice);
+  renderInvPaymentForm();
+}
+
+function renderInvPaymentForm(){
+  const el = document.getElementById('invPaymentFormRoot');
+  if(!el) return;
+  if(!invPaymentFormOpen){ el.innerHTML = ''; return; }
+  const inv = invoiceDetailState.invoice;
+  const balance = (parseFloat(inv.balanceDue)||0).toFixed(2);
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <h2 class="section-title" style="margin-top:0;">Record Payment</h2>
+      <div class="grid c3">
+        <div class="field"><label>Amount</label><input type="number" step="0.01" id="payAmount" value="${balance}"></div>
+        <div class="field"><label>Method</label><select id="payMethod">
+          <option value="check">Check</option><option value="cash">Cash</option><option value="ach">ACH / Bank Transfer</option><option value="card">Card</option><option value="other">Other</option>
+        </select></div>
+        <div class="field"><label>Date</label><input type="date" id="payDate" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div class="grid c3">
+        <div class="field"><label>Reference (optional)</label><input id="payReference" placeholder="Check #, transaction id…"></div>
+        <div class="field" style="grid-column:span 2;"><label>Notes (optional)</label><input id="payNotes"></div>
+      </div>
+      <div class="row-actions">
+        <button class="btn ghost" id="payCancel">Cancel</button>
+        <button class="btn" id="paySubmit">Save Payment</button>
+      </div>
+    </div>`;
+  document.getElementById('payCancel').addEventListener('click', ()=>{ invPaymentFormOpen=false; renderInvPaymentForm(); });
+  document.getElementById('paySubmit').addEventListener('click', async ()=>{
+    const amount = parseFloat(document.getElementById('payAmount').value);
+    if(!(amount > 0)){ showToast('Enter a valid payment amount.', 'error'); return; }
+    const btn = document.getElementById('paySubmit'); setBusy(btn, 'Saving…');
+    const res = await apiAction('recordInvoicePayment', {
+      invoiceId: inv.id, amount,
+      method: document.getElementById('payMethod').value,
+      reference: document.getElementById('payReference').value.trim(),
+      notes: document.getElementById('payNotes').value.trim(),
+      paymentDate: document.getElementById('payDate').value
+    });
+    if(!res.ok){ showToast('Could not record payment: ' + (res.error||''), 'error'); btn.disabled=false; btn.textContent='Save Payment'; return; }
+    showToast('Payment recorded.', 'success');
+    invPaymentFormOpen = false;
+    await openInvoiceDetail(inv.id);
+  });
+}
+
+async function copyInvoiceLink(id){
+  const url = invoicePublicUrl(id);
+  try{ await navigator.clipboard.writeText(url); showToast('Link copied to clipboard.', 'success'); }
+  catch(e){ showToast('Could not copy automatically — link: ' + url, 'info'); }
+}
+
+async function sendInvoiceFlow(inv){
+  const st = invoiceDetailState;
+  if(!st.lineItems.length){ showToast('Add at least one line item before sending.', 'error'); return; }
+  const wasDraft = inv.status === 'Draft';
+  if(wasDraft){
+    const res = await apiWrite('update', 'Invoices', inv.id, {status:'Sent', sentAt: new Date().toISOString()});
+    if(!res.ok){ showToast('Could not mark as sent: ' + (res.error||''), 'error'); return; }
+    inv.status = 'Sent';
+  }
+  const actorName = currentUser ? currentUser.email : '';
+  await apiWrite('create', 'InvoiceActivity', null, {invoiceId: inv.id, action:'Sent', detail: wasDraft?null:'Resent', actorName});
+  st.activity.unshift({action:'Sent', detail: wasDraft?null:'Resent', actorName, createdAt: new Date().toISOString()});
+  renderInvoiceDetailView();
+
+  const billing = st.billing;
+  const companyName = (st.company && st.company.name) || 'us';
+  const url = invoicePublicUrl(inv.id);
+  const bodyLines = [
+    'Hi {{CustomerName}},',
+    'Your invoice {{InvoiceNumber}} for {{AmountDue}} is ready — balance due {{BalanceDue}} by {{DueDate}}.',
+    `View the invoice here: ${url}`
+  ].join('\n\n') + '\n\nThank you,\n{{CompanyName}}';
+  openEmailComposer({
+    billing, documentRef: `Invoice ${inv.invoiceNo}`,
+    placeholders: {
+      CustomerName: billing?billing.name:'', CompanyName: companyName,
+      InvoiceNumber: inv.invoiceNo, AmountDue: pbMoney(inv.total),
+      BalanceDue: pbMoney(inv.balanceDue), DueDate: inv.dueDate ? fmtDate(inv.dueDate) : ''
+    },
+    defaultSubject: `Invoice ${inv.invoiceNo} from ${companyName}`,
+    defaultBody: bodyLines
+  });
+}
+
+async function duplicateInvoice(){
+  const st = invoiceDetailState;
+  const inv = st.invoice;
+  const btn = document.getElementById('invDuplicateBtn'); setBusy(btn, 'Duplicating…');
+  const defaultDue = new Date(); defaultDue.setDate(defaultDue.getDate()+30);
+  const payload = {
+    billingId: inv.billingId, serviceId: inv.serviceId, jobTicketId: inv.jobTicketId,
+    invoiceDate: new Date().toISOString().slice(0,10), dueDate: defaultDue.toISOString().slice(0,10),
+    poNumber: inv.poNumber, preparedBy: inv.preparedBy, notes: inv.notes, termsConditions: inv.termsConditions,
+    discountType: inv.discountType, discountValue: inv.discountValue, taxRate: inv.taxRate,
+    subtotal: inv.subtotal, taxAmount: inv.taxAmount, total: inv.total, balanceDue: inv.total
+  };
+  const res = await apiWrite('create', 'Invoices', null, payload);
+  if(!res.ok){ showToast('Could not duplicate: ' + (res.error||''), 'error'); btn.disabled=false; btn.textContent='Duplicate'; return; }
+  const dataList = st.lineItems.map((li,i)=>({
+    invoiceId: res.id, priceBookItemId: li.priceBookItemId, name: li.name, description: li.description,
+    quantity: li.quantity, unitPrice: li.unitPrice, discount: li.discount, taxable: li.taxable, sortOrder: i
+  }));
+  if(dataList.length) await apiWriteMany('InvoiceLineItems', dataList);
+  await apiWrite('create', 'InvoiceActivity', null, {invoiceId: res.id, action:'Created', detail:`Duplicated from ${inv.invoiceNo}`, actorName: currentUser?currentUser.email:''});
+  showToast('Duplicated as a new Draft.', 'success');
+  await openInvoiceDetail(res.id);
+}
+
+async function voidInvoice(){
+  if(!(await confirmDialog('Void this invoice? This cannot be undone.', {confirmLabel:'Void Invoice'}))) return;
+  const inv = invoiceDetailState.invoice;
+  const res = await apiWrite('update', 'Invoices', inv.id, {status:'Void', voidedAt: new Date().toISOString()});
+  if(!res.ok){ showToast('Could not void: ' + (res.error||''), 'error'); return; }
+  await apiWrite('create', 'InvoiceActivity', null, {invoiceId: inv.id, action:'Void', actorName: currentUser?currentUser.email:''});
+  inv.status = 'Void';
+  showToast('Invoice voided.', 'success');
+  renderInvoiceDetailView();
+}
+
+/* ---- public (no-login) customer view — see the boot check near the end of this file ---- */
+async function renderPublicInvoicePage(id){
+  const root = document.getElementById('publicInvoicePage');
+  root.innerHTML = '<div class="crm-empty"><span class="spinner"></span>Loading…</div>';
+  let json;
+  try{
+    const res = await fetch(API_PROXY_PATH + '?' + new URLSearchParams({action:'publicInvoice', id}).toString());
+    json = await parseApiResponse(res);
+  }catch(e){ json = {ok:false, error:'Could not reach the server — check your connection and try again.'}; }
+
+  if(!json || !json.ok){
+    root.innerHTML = `
+      <div class="public-est-topbar"><img src="${LOGO_DATA_URI}" style="height:28px;" alt="Logo"></div>
+      <div class="crm-empty" style="max-width:520px; margin:60px auto;">${(json&&json.error)||'This invoice link is invalid or no longer available.'}</div>`;
+    return;
+  }
+
+  const {invoice, lineItems, payments, billing, service, company} = json;
+  const docHtml = renderInvoiceDocumentHtml(invoice, lineItems, payments, billing, service, company, {status: invoice.status});
+  const balance = parseFloat(invoice.balanceDue)||0;
+
+  root.innerHTML = `
+    <div class="public-est-topbar"><img src="${(company&&company.logoUrl)||LOGO_DATA_URI}" style="height:28px;" alt="Logo"> ${company&&company.name?company.name:''}</div>
+    ${docHtml}
+    ${invoice.status === 'Paid' ? `<p class="public-est-note" style="color:var(--green); font-weight:600;">✓ Paid in full${invoice.paidAt?' on '+fmtDate(String(invoice.paidAt).slice(0,10)):''}. Thank you!</p>` : ''}
+    ${invoice.status === 'Void' ? `<p class="public-est-note">This invoice is void.</p>` : ''}
+    ${balance > 0 && invoice.status !== 'Void' ? `<p class="public-est-note">Balance of <strong>${pbMoney(balance)}</strong> due${invoice.dueDate?' by '+fmtDate(invoice.dueDate):''}. Contact us to arrange payment.</p>` : ''}`;
+}
+
+/* ---- Convert an Approved estimate into a Draft invoice (see the disabled button on
+   the Estimate detail view) ---- */
+async function convertEstimateToInvoiceFlow(){
+  const e = estimateDetailState.estimate;
+  const btn = document.getElementById('estConvertBtn');
+  if(btn) setBusy(btn, 'Converting…');
+  const res = await apiAction('convertEstimateToInvoice', {estimateId: e.id});
+  if(!res.ok){
+    showToast('Could not convert: ' + (res.error||''), 'error');
+    if(btn){ btn.disabled = false; btn.textContent = 'Convert to Invoice'; }
+    return;
+  }
+  showToast(`Converted to invoice ${res.invoiceNo}.`, 'success');
+  activateTab('invoices', {render:false});
+  await openInvoiceDetail(res.id);
 }
 
 /* ============================= TICKETS TAB (flat list across all customers) ============================= */
@@ -4671,13 +5395,18 @@ renderCodeLib();
 renderDevices();
 renderDiscrepancies();
 
-// A ?estimate=<id> link is the customer's own emailed estimate — a completely
-// separate, no-login page. Skip the normal login/app boot entirely for it.
+// A ?estimate=<id> or ?invoice=<id> link is the customer's own emailed document — a
+// completely separate, no-login page. Skip the normal login/app boot entirely for it.
 const publicEstimateId = new URLSearchParams(location.search).get('estimate');
+const publicInvoiceId = new URLSearchParams(location.search).get('invoice');
 if(publicEstimateId){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('publicEstimatePage').style.display = 'block';
   renderPublicEstimatePage(publicEstimateId);
+} else if(publicInvoiceId){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('publicInvoicePage').style.display = 'block';
+  renderPublicInvoicePage(publicInvoiceId);
 } else {
   const storedSession = loadStoredSession();
   if(storedSession && storedSession.token && storedSession.user){
