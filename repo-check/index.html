@@ -863,7 +863,12 @@ const setupFields = ['buildingName','buildingPhone','buildingFax','buildingMobil
   'contactName','contactTitle','company','companyAddress','inspector','inspectorPhone','inspectorFax','inspectorMobile',
   'inspectorEmail','inspType','inspDate','standard','panelMfr','panelModel','panelLocation','panelInstall','swVersion','swDate',
   'currentProtection','disconnectLocation','disconnectType','idcStyle','slcStyle','nacStyle','signedDate','poNumber'];
-let setup = {};
+// Our own company's info under "Inspection Performed By" — the same on every report,
+// so every new/cleared report starts pre-filled with it instead of asking the
+// inspector to retype it each time. Still just a starting value: fully editable, and
+// a loaded/saved report's own values always take precedence over this.
+const DEFAULT_SETUP = {company: 'Maruti One', companyAddress: 'Overland Park, Kansas 66202'};
+let setup = Object.assign({}, DEFAULT_SETUP);
 let certifications = []; // {type, number}
 
 const CATEGORY_MAP = {
@@ -964,6 +969,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
 setupFields.forEach(f=>{
   const el = document.getElementById('s_'+f);
   if(!el) return;
+  if(setup[f]) el.value = setup[f];
   el.addEventListener('input', ()=>{ setup[f]=el.value; });
 });
 
@@ -1649,8 +1655,8 @@ document.getElementById('btnSample').addEventListener('click', loadSample);
 // and, so a completed report doesn't linger for the next customer, right after a
 // successful "Save to Customer".
 function clearBuilderState(){
-  devices = []; setup = {}; certifications = []; codeLib = []; deviceSeq = 1;
-  setupFields.forEach(f=>{ const el=document.getElementById('s_'+f); if(el) el.value=''; });
+  devices = []; setup = Object.assign({}, DEFAULT_SETUP); certifications = []; codeLib = []; deviceSeq = 1;
+  setupFields.forEach(f=>{ const el=document.getElementById('s_'+f); if(el) el.value=setup[f]||''; });
   renderCerts(); renderCodeLib(); renderDevices(); renderDiscrepancies(); renderSetupLinker();
   refreshCurrentPreview();
 }
@@ -3118,7 +3124,7 @@ function openAttachReportPicker(ticket, reportTypes){
       if(slug === 'fire-alarm'){
         if(devices.length && !(await confirmDialog('Start a new blank Fire Alarm Inspection for this ticket? This clears devices currently in the builder.', {confirmLabel:'Start new', danger:false}))) return;
         devices = []; certifications = []; codeLib = [];
-        setup = {};
+        setup = Object.assign({}, DEFAULT_SETUP);
         setup.linkedBillingId = crm.billingId;
         setup.linkedServiceId = ticket.serviceId;
         setup.linkedJobTicketId = ticket.id;
