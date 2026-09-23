@@ -160,6 +160,31 @@ async function uploadAttachment_(data){
   return {id: rec.id, url: fileUrl};
 }
 
+async function renderHtmlToPdf_(html){
+  // Server-side PDF rendering for email attachments — separate from the client-side
+  // html2pdf() export button, which needs a live browser DOM this serverless function
+  // doesn't have. Uses PDFShift (https://pdfshift.io) as a plain REST API, same "no
+  // SDK" pattern as Resend for email. Required env var: PDFSHIFT_API_KEY.
+  const apiKey = process.env.PDFSHIFT_API_KEY;
+  if(!apiKey) return {ok:false, error:'PDF attachments are not configured yet — set PDFSHIFT_API_KEY in the Vercel project.'};
+  try{
+    const res = await fetch('https://api.pdfshift.io/v3/convert/pdf', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from('api:' + apiKey).toString('base64'),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({source: html, format: 'Letter', use_print: false})
+    });
+    if(!res.ok){
+      const errText = await res.text().catch(()=> '');
+      return {ok:false, error:`PDF render failed (${res.status}): ${errText.slice(0,200)}`};
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    return {ok:true, base64: buf.toString('base64')};
+  }catch(e){ return {ok:false, error:String(e && e.message || e)}; }
+}
+
 async function sendEmail_(data, session){
   // Doc §4 — reusable email sending: general customer communication today, Estimates/
   // Invoices later. Uses Resend (https://resend.com) as the provider — a Vercel-friendly
@@ -183,9 +208,8 @@ async function sendEmail_(data, session){
   // Attachments reference files already uploaded to Supabase Storage (e.g. a service
   // location's existing Attachments) — fetch and inline each as base64. A single bad
   // attachment link shouldn't sink the whole send, so skip it rather than throw.
-  let attachments;
+  const attachments = [];
   if(Array.isArray(data.attachments) && data.attachments.length){
-    attachments = [];
     for(const att of data.attachments){
       try{
         const fileRes = await fetch(att.url);
@@ -196,12 +220,23 @@ async function sendEmail_(data, session){
     }
   }
 
+  // Estimates/Invoices pass their rendered document as standalone HTML (the doc's own
+  // markup + the page's live stylesheet) here to attach a PDF copy alongside the link
+  // in the email — a nice-to-have, so a render failure (or PDFSHIFT_API_KEY not being
+  // set yet) never blocks the send itself, just skips the attachment.
+  let pdfWarning = null;
+  if(data.pdfHtml){
+    const pdf = await renderHtmlToPdf_(data.pdfHtml);
+    if(pdf.ok) attachments.push({filename: data.pdfFilename || 'document.pdf', content: pdf.base64});
+    else pdfWarning = pdf.error;
+  }
+
   const payload = {
     from, to, subject,
     html: data.html || '<p></p>',
     ...(cc.length ? {cc} : {}),
     ...(bcc.length ? {bcc} : {}),
-    ...(attachments && attachments.length ? {attachments} : {})
+    ...(attachments.length ? {attachments} : {})
   };
 
   let sendOk = true, errorMessage = null;
@@ -227,11 +262,11 @@ async function sendEmail_(data, session){
       documentRef: data.documentRef || 'General communication',
       sentBy: session.email,
       status: sendOk ? 'sent' : 'failed',
-      errorMessage
+      errorMessage: sendOk ? pdfWarning : errorMessage
     });
   }catch(e){ /* logging failure shouldn't mask the send result */ }
 
-  return sendOk ? {ok:true} : {ok:false, error: errorMessage};
+  return sendOk ? {ok:true, pdfWarning} : {ok:false, error: errorMessage};
 }
 
 async function autoExpireEstimate_(est){
